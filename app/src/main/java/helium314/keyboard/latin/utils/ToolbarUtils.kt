@@ -96,6 +96,7 @@ fun getCodeForToolbarKey(key: ToolbarKey) = Settings.getInstance().getCustomTool
     FLOATING -> KeyCode.TOGGLE_FLOATING_WINDOW
     BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING
     TEXT_FIELD_TEST -> KeyCode.TEXT_FIELD_TEST
+    TRACKPAD -> KeyCode.TRACKPAD
 }
 
 fun getCodeForToolbarKeyLongClick(key: ToolbarKey) = Settings.getInstance().getCustomToolbarLongpressCode(key) ?: when (key) {
@@ -122,7 +123,7 @@ fun getCodeForToolbarKeyLongClick(key: ToolbarKey) = Settings.getInstance().getC
 enum class ToolbarKey {
     VOICE, CLIPBOARD, NUMPAD, DPAD, UNDO, REDO, SETTINGS, SELECT_ALL, SELECT_WORD, COPY, CUT, PASTE, ONE_HANDED, FLOATING, SPLIT,
     INCOGNITO, AUTOCORRECT, CLEAR_CLIPBOARD, CLOSE_HISTORY, EMOJI, LEFT, RIGHT, UP, DOWN, WORD_LEFT, WORD_RIGHT,
-    PAGE_UP, PAGE_DOWN, FULL_LEFT, FULL_RIGHT, PAGE_START, PAGE_END, BACKGROUND_GATHERING, TEXT_FIELD_TEST
+    PAGE_UP, PAGE_DOWN, FULL_LEFT, FULL_RIGHT, PAGE_START, PAGE_END, BACKGROUND_GATHERING, TEXT_FIELD_TEST, TRACKPAD
 }
 
 enum class ToolbarMode {

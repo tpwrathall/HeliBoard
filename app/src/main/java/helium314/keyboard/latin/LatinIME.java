@@ -703,6 +703,7 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onStartInput(final EditorInfo editorInfo, final boolean restarting) {
+        if (!restarting) CursorTracker.reset();
         mHandler.onStartInput(editorInfo, restarting);
     }
 
@@ -715,12 +716,13 @@ public class LatinIME extends InputMethodService implements
     @Override
     public void onUpdateCursorAnchorInfo(final android.view.inputmethod.CursorAnchorInfo cursorAnchorInfo) {
         super.onUpdateCursorAnchorInfo(cursorAnchorInfo);
-        TextFieldDiagnostics.onCursorAnchorInfo(cursorAnchorInfo);
+        CursorTracker.onCursorAnchorInfo(cursorAnchorInfo);
     }
 
     @Override
     public void onFinishInputView(final boolean finishingInput) {
         StatsUtils.onFinishInputView();
+        helium314.keyboard.keyboard.TrackpadOverlay.hide();
         mHandler.onFinishInputView(finishingInput);
         mStatsUtilsManager.onFinishInputView();
         mGestureConsumer = GestureConsumer.NULL_GESTURE_CONSUMER;

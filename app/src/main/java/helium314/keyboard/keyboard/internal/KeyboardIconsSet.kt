@@ -158,6 +158,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
+                    ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
                 })
             }
         } }
@@ -223,6 +224,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
+                    ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
                 })
             }
         } }
@@ -288,6 +290,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
+                    ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
                 })
             }
         } }

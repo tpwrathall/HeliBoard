@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.SelectGesture
 import android.view.inputmethod.TextBoundsInfoResult
@@ -19,14 +18,6 @@ import android.view.inputmethod.TextBoundsInfoResult
  */
 object TextFieldDiagnostics {
     private val handler = Handler(Looper.getMainLooper())
-    private var lastAnchor: CursorAnchorInfo? = null
-    private var lastAnchorTime = 0L
-
-    @JvmStatic
-    fun onCursorAnchorInfo(info: CursorAnchorInfo) {
-        lastAnchor = info
-        lastAnchorTime = SystemClock.uptimeMillis()
-    }
 
     @JvmStatic
     fun typeReport(ime: LatinIME) {
@@ -57,10 +48,10 @@ object TextFieldDiagnostics {
         }
 
         handler.postDelayed({
-            val anchor = lastAnchor
+            val anchor = CursorTracker.lastInfo
             val cursor = when {
                 !cursorAccepted -> "no"
-                anchor == null || lastAnchorTime < startTime -> "no reply"
+                anchor == null || CursorTracker.lastUpdateTime < startTime -> "no reply"
                 anchor.insertionMarkerHorizontal.isNaN() -> "partly (no cursor point)"
                 else -> "YES"
             }

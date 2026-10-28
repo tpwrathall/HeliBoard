@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.view.inputmethod.TextBoundsInfo
 import android.view.inputmethod.TextBoundsInfoResult
 import androidx.annotation.RequiresApi
+import helium314.keyboard.latin.CursorTracker
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.RichInputConnection
 
@@ -68,6 +69,7 @@ class VerticalCursorMover(
     /** forget the remembered horizontal position (cursor moved sideways) */
     fun resetGoal() {
         goalX = null
+        gestureGoalX = null
         keepGoalOnce = false
     }
 
@@ -124,7 +126,12 @@ class VerticalCursorMover(
                 requestInFlight = false
                 val boundsInfo = result.textBoundsInfo
                 if (result.resultCode != TextBoundsInfoResult.CODE_SUCCESS || boundsInfo == null) {
-                    flushPendingAsArrows()
+                    // no character positions, try the app's cursor position + "select at point" instead
+                    val p = pendingLines
+                    val t = pendingTarget ?: cursorTarget
+                    pendingLines = 0
+                    pendingTarget = null
+                    gestureOrFallback(p, t)
                     return@requestTextBoundsInfo
                 }
                 info = boundsInfo
@@ -184,6 +191,91 @@ class VerticalCursorMover(
             this.info = null
             keepGoalOnce = goalX != null
             target.fallback(remaining)
+        }
+    }
+
+    // ---- second way, for apps without character positions (e.g. browsers): ----
+    // cursor position reported by the app (CursorAnchorInfo) + "select at point" (SelectGesture)
+    private var gestureBusy = false
+    private var gesturePendingLines = 0
+    private var gesturePendingTarget: Target? = null
+    private var gestureGoalX: Float? = null // screen x
+    private var lastGestureOffset = -1
+
+    private fun gestureOrFallback(lines: Int, target: Target) {
+        if (lines == 0) return
+        if (!CursorPlacer.isSupported(latinIME) || CursorTracker.lastInfo == null) {
+            target.fallback(lines)
+            return
+        }
+        if (gestureBusy) {
+            if (gesturePendingTarget != null && gesturePendingTarget !== target) return // switched target mid-way, drop
+            gesturePendingTarget = target
+            gesturePendingLines += lines
+            return
+        }
+        gestureBusy = true
+        gestureStep(lines, target)
+    }
+
+    private fun finishGesture() {
+        gestureBusy = false
+        val lines = gesturePendingLines
+        val target = gesturePendingTarget
+        gesturePendingLines = 0
+        gesturePendingTarget = null
+        if (lines != 0 && target != null) gestureOrFallback(lines, target)
+    }
+
+    private fun gestureStep(lines: Int, target: Target) {
+        val active = target.from()
+        if (active < 0) {
+            gestureBusy = false
+            target.fallback(lines)
+            return
+        }
+        if (active != lastGestureOffset) gestureGoalX = null // moved by something else
+        val proceed: (CursorTracker.Marker?) -> Unit = proceed@{ marker ->
+            if (marker == null) {
+                // app doesn't report the cursor position after all
+                target.apply(active, true)
+                gestureBusy = false
+                target.fallback(lines)
+                return@proceed
+            }
+            val goal = gestureGoalX ?: marker.x
+            gestureTryLine(target, active, goal, marker, lines, 0)
+        }
+        val current = CursorTracker.marker()
+        if (!connection.hasSelection() && connection.expectedSelectionEnd == active && current != null) {
+            proceed(current)
+        } else {
+            // the app only reports the position of a plain cursor, so put the cursor at the moving end first
+            connection.setSelection(active, active)
+            CursorTracker.awaitNextUpdate(300) { proceed(it ?: CursorTracker.marker()) }
+        }
+    }
+
+    private fun gestureTryLine(target: Target, active: Int, goal: Float, marker: CursorTracker.Marker, lines: Int, extra: Int) {
+        val direction = if (lines < 0) -1 else 1
+        val y = marker.centerY + (lines + extra * direction) * marker.height
+        CursorPlacer.offsetAt(latinIME, goal, y, marker.height) { offset ->
+            when {
+                offset != null -> {
+                    target.apply(offset, true)
+                    gestureGoalX = goal
+                    lastGestureOffset = offset
+                    finishGesture()
+                }
+                extra == 0 -> gestureTryLine(target, active, goal, marker, lines, 1) // maybe an empty line, try the next
+                else -> {
+                    // no text there (first / last line): stay, and keep the selection as it was
+                    target.apply(active, true)
+                    gestureGoalX = goal
+                    lastGestureOffset = active
+                    finishGesture()
+                }
+            }
         }
     }
 

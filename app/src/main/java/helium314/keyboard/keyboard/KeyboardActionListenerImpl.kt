@@ -149,6 +149,19 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             else -> if (!bypassVerticalCursorMover) verticalCursorMover.invalidate()
         }
         when (primaryCode) {
+            KeyCode.TRACKPAD -> {
+                TrackpadOverlay.toggle(
+                    latinIME,
+                    beforePlace = { inputLogic.finishInput() },
+                    place = { offset ->
+                        inputLogic.setExpectCursorMove()
+                        connection.setSelection(offset, offset)
+                        verticalCursorMover.resetGoal()
+                        inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current)
+                    },
+                )
+                return
+            }
             KeyCode.TEXT_FIELD_TEST -> {
                 inputLogic.finishInput()
                 TextFieldDiagnostics.typeReport(latinIME)
