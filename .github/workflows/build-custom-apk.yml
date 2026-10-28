@@ -1,0 +1,52 @@
+name: Build custom APK
+
+on:
+  push:
+    branches: [ cursor-and-shortcut-swipes ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeliBoard-custom
+          path: app/build/outputs/apk/debug/*-debug*.apk
+
+      - name: Publish APK as a release (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/*-debug*.apk HeliBoard-custom.apk
+          gh release delete custom-latest --yes --cleanup-tag || true
+          gh release create custom-latest HeliBoard-custom.apk \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "HeliBoard custom build (${GITHUB_SHA::7})" \
+            --notes "Custom build with column-keeping cursor, shift/delete swipe selection and enter-swipe shortcuts. Built from ${GITHUB_SHA}."
+
+      - name: Archive reports for failed job
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: '*/build/reports'
+        if: ${{ failure() }}

@@ -70,7 +70,11 @@ fun AdvancedSettingsScreen(
             Settings.PREF_TOUCHPAD_SENSITIVITY else null,
         if (Settings.readVerticalSpaceSwipe(prefs) == KeyboardActionListener.SwipeAction.TOUCHPAD_MODE)
             Settings.PREF_TOUCHPAD_EDGE_SCROLL else null,
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) Settings.PREF_KEEP_CURSOR_COLUMN else null,
         Settings.PREF_DELETE_SWIPE,
+        if (prefs.getInt(Settings.PREF_DELETE_SWIPE, Defaults.PREF_DELETE_SWIPE) != 0) Settings.PREF_DELETE_SWIPE_SELECT_ONLY else null,
+        Settings.PREF_SHIFT_SWIPE_SELECT,
+        Settings.PREF_ENTER_SWIPE_SHORTCUTS,
         Settings.PREF_SPACE_TO_CHANGE_LANG,
         Settings.PREFS_LONG_PRESS_SYMBOLS_FOR_NUMPAD,
         Settings.PREF_ENABLE_EMOJI_ALT_PHYSICAL_KEY,
@@ -164,6 +168,18 @@ fun createAdvancedSettings(context: Context) = listOf(
             stringResource(R.string.delete_swipe_words) to 2
         )
         ListPreference(it, items, Defaults.PREF_DELETE_SWIPE, description = stringResource(R.string.delete_swipe_summary))
+    },
+    Setting(context, Settings.PREF_DELETE_SWIPE_SELECT_ONLY, R.string.delete_swipe_select_only, R.string.delete_swipe_select_only_summary) {
+        SwitchPreference(it, Defaults.PREF_DELETE_SWIPE_SELECT_ONLY)
+    },
+    Setting(context, Settings.PREF_SHIFT_SWIPE_SELECT, R.string.shift_swipe_select, R.string.shift_swipe_select_summary) {
+        SwitchPreference(it, Defaults.PREF_SHIFT_SWIPE_SELECT)
+    },
+    Setting(context, Settings.PREF_ENTER_SWIPE_SHORTCUTS, R.string.enter_swipe_shortcuts, R.string.enter_swipe_shortcuts_summary) {
+        SwitchPreference(it, Defaults.PREF_ENTER_SWIPE_SHORTCUTS)
+    },
+    Setting(context, Settings.PREF_KEEP_CURSOR_COLUMN, R.string.keep_cursor_column, R.string.keep_cursor_column_summary) {
+        SwitchPreference(it, Defaults.PREF_KEEP_CURSOR_COLUMN)
     },
     Setting(context, Settings.PREF_SPACE_TO_CHANGE_LANG,
         R.string.prefs_long_press_keyboard_to_change_lang,

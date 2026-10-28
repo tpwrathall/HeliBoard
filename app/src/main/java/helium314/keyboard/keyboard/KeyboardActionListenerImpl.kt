@@ -32,6 +32,7 @@ import helium314.keyboard.latin.utils.GestureDataGatheringSettings
 import helium314.keyboard.latin.utils.RecapitalizeMode
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.prefs
+import java.text.BreakIterator
 import kotlin.math.abs
 
 class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inputLogic: InputLogic) : KeyboardActionListener {
@@ -46,6 +47,22 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     private val keyboardSwitcher = KeyboardSwitcher.getInstance()
     private val settings = Settings.getInstance()
     private val audioAndHapticFeedbackManager = AudioAndHapticFeedbackManager.getInstance()
+
+    // up / down cursor movement that keeps the horizontal position
+    private var bypassVerticalCursorMover = false
+    private val verticalCursorMover = VerticalCursorMover(
+        latinIME, connection,
+        beforeMove = {
+            inputLogic.setExpectCursorMove()
+            inputLogic.finishInput()
+        },
+        afterMove = { inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current) },
+        sendArrows = { lines -> sendVerticalArrows(lines) },
+    )
+
+    // shift swipe selection state
+    private var shiftSelectAnchor = -1
+    private var shiftSelectActive = -1
 
     // language slide state
     private var initialSubtype: InputMethodSubtype? = null
@@ -104,6 +121,17 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean) {
+        when (primaryCode) {
+            KeyCode.ARROW_UP, KeyCode.ARROW_DOWN -> {
+                if (!bypassVerticalCursorMover && metaState == 0 && settings.current.mKeepCursorColumn
+                        && verticalCursorMover.isSupported) {
+                    verticalCursorMover.move(if (primaryCode == KeyCode.ARROW_UP) -1 else 1)
+                    return
+                }
+            }
+            KeyCode.ARROW_LEFT, KeyCode.ARROW_RIGHT -> verticalCursorMover.resetGoal()
+            else -> if (!bypassVerticalCursorMover) verticalCursorMover.invalidate()
+        }
         when (primaryCode) {
             KeyCode.TOGGLE_AUTOCORRECT -> return settings.toggleAutoCorrect()
             KeyCode.TOGGLE_INCOGNITO_MODE -> {
@@ -276,8 +304,93 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onUpWithDeletePointerActive() {
         if (!connection.hasSelection()) return
+        if (settings.current.mDeleteSwipeSelectOnly) return // keep the selection, user decides what to do with it
         inputLogic.finishInput()
         onCodeInput(KeyCode.DELETE, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
+    }
+
+    private fun sendVerticalArrows(lines: Int) {
+        bypassVerticalCursorMover = true
+        try {
+            val code = if (lines < 0) KeyCode.ARROW_UP else KeyCode.ARROW_DOWN
+            repeat(abs(lines)) {
+                onCodeInput(code, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
+            }
+        } finally {
+            bypassVerticalCursorMover = false
+        }
+    }
+
+    override fun onMoveShiftSelectPointer(steps: Int) {
+        if (steps == 0) return
+        if (shiftSelectAnchor < 0) {
+            inputLogic.finishInput()
+            val selStart = connection.expectedSelectionStart
+            val selEnd = connection.expectedSelectionEnd
+            if (selStart < 0 || selEnd < 0) return
+            // with an existing selection, keep its start and move its end
+            shiftSelectAnchor = selStart
+            shiftSelectActive = selEnd
+        }
+        val rtl = RichInputMethodManager.getInstance().currentSubtype.isRtlSubtype
+        val directedSteps = if (rtl) -steps else steps
+        val newActive = offsetMovedByCharacters(shiftSelectActive, directedSteps) ?: return
+        if (newActive == shiftSelectActive) return
+        if (directedSteps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
+        shiftSelectActive = newActive
+        verticalCursorMover.resetGoal()
+        connection.setSelection(shiftSelectAnchor, shiftSelectActive)
+    }
+
+    override fun onEndShiftSelect() {
+        shiftSelectAnchor = -1
+        shiftSelectActive = -1
+    }
+
+    /** returns [from] moved by [steps] characters (graphemes), or null if the surrounding text is not available */
+    private fun offsetMovedByCharacters(from: Int, steps: Int): Int? {
+        val selStart = connection.expectedSelectionStart
+        val selEnd = connection.expectedSelectionEnd
+        if (selStart < 0 || selEnd < selStart) return null
+        val n = abs(steps) * 4 + 16
+        val before = connection.getTextBeforeCursor(n, 0) ?: ""
+        val selected = if (selEnd > selStart) connection.getSelectedText(0) ?: return null else ""
+        val after = connection.getTextAfterCursor(n, 0) ?: ""
+        val text = "$before$selected$after"
+        val base = selStart - before.length
+        var pos = from - base
+        if (pos < 0 || pos > text.length) return null
+        val iterator = BreakIterator.getCharacterInstance()
+        iterator.setText(text)
+        for (i in 0 until abs(steps)) {
+            val next = if (steps > 0) {
+                if (pos >= text.length) break
+                iterator.following(pos)
+            } else {
+                if (pos <= 0) break
+                iterator.preceding(pos)
+            }
+            if (next == BreakIterator.DONE) break
+            pos = next
+        }
+        return pos + base
+    }
+
+    override fun onEnterSwipeShortcut(targetCode: Int): Boolean {
+        if (targetCode <= 0) return false
+        val code = when (Character.toLowerCase(targetCode)) {
+            'a'.code -> KeyCode.CLIPBOARD_SELECT_ALL
+            'c'.code -> KeyCode.CLIPBOARD_COPY
+            'x'.code -> KeyCode.CLIPBOARD_CUT
+            'v'.code -> KeyCode.CLIPBOARD_PASTE
+            'z'.code -> KeyCode.UNDO
+            'y'.code -> KeyCode.REDO
+            's'.code -> KeyCode.CLIPBOARD_SELECT_WORD
+            else -> return false
+        }
+        performHapticFeedback(HapticEvent.KEY_PRESS)
+        onCodeInput(code, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
+        return true
     }
 
     override fun resetMetaState() {
@@ -327,6 +440,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     private fun onMoveCursorHorizontally(rawSteps: Int): Boolean {
         if (rawSteps == 0) return false
+        verticalCursorMover.resetGoal()
         // for RTL languages we want to invert pointer movement
         val rtl = RichInputMethodManager.getInstance().currentSubtype.isRtlSubtype
         val steps = if (rtl) -rawSteps else rawSteps

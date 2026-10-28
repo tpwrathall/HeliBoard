@@ -230,6 +230,14 @@
     <string name="delete_swipe_letters">Letters</string>
     <!-- "delete_swipe" option to delete entire words by swiping. -->
     <string name="delete_swipe_words">Words</string>
+    <string name="delete_swipe_select_only">Delete swipe only selects</string>
+    <string name="delete_swipe_select_only_summary">Releasing a delete key swipe keeps the text selected instead of deleting it</string>
+    <string name="shift_swipe_select">Shift swipe to select</string>
+    <string name="shift_swipe_select_summary">Swipe left or right from the shift key to select text. Sliding up onto a letter still types a capital</string>
+    <string name="enter_swipe_shortcuts">Enter swipe shortcuts</string>
+    <string name="enter_swipe_shortcuts_summary">Slide from the enter key onto a letter and release: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
+    <string name="keep_cursor_column">Keep cursor column</string>
+    <string name="keep_cursor_column_summary">Moving the cursor up or down keeps it at the same horizontal position, like on iOS. Falls back to arrow keys in apps that don\'t report text positions</string>
     <!-- Preferences item and dialog title for backup and restore -->
     <string name="backup_restore_title">Backup and restore</string>
     <!-- Message for backup and restore dialog -->

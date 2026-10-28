@@ -22,6 +22,16 @@ android {
         proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
 
+    signingConfigs {
+        // fixed key for the custom build, so each new APK installs over the previous one
+        create("customDebug") {
+            storeFile = file("custom-debug.keystore")
+            storePassword = "android"
+            keyAlias = "customdebug"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -41,6 +51,7 @@ android {
             isMinifyEnabled = true
             isJniDebuggable = false
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("customDebug")
         }
         create("runTests") { // build variant for running tests on CI that skips tests known to fail
             isMinifyEnabled = false

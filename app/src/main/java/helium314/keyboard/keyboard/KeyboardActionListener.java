@@ -123,6 +123,12 @@ public interface KeyboardActionListener {
 
     void onMoveDeletePointer(int steps);
     void onUpWithDeletePointerActive();
+    /** Swipe from shift key: extend/shrink the selection by the given steps (negative = left). */
+    void onMoveShiftSelectPointer(int steps);
+    /** Shift key swipe finished. */
+    void onEndShiftSelect();
+    /** Swipe from enter released on another key: run the shortcut for that key, returns whether one exists. */
+    boolean onEnterSwipeShortcut(int targetCode);
     void resetMetaState();
 
     KeyboardActionListener EMPTY_LISTENER = new Adapter();
@@ -181,6 +187,14 @@ public interface KeyboardActionListener {
         public void onMoveDeletePointer(int steps) {}
         @Override
         public void onUpWithDeletePointerActive() {}
+        @Override
+        public void onMoveShiftSelectPointer(int steps) {}
+        @Override
+        public void onEndShiftSelect() {}
+        @Override
+        public boolean onEnterSwipeShortcut(int targetCode) {
+            return false;
+        }
         @Override
         public void resetMetaState() {}
     }

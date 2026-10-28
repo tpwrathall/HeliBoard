@@ -108,6 +108,10 @@ object Defaults {
     @JvmField
     val PREF_SPACE_VERTICAL_SWIPE = KeyboardActionListener.SwipeAction.NONE.name
     const val PREF_DELETE_SWIPE = 1
+    const val PREF_DELETE_SWIPE_SELECT_ONLY = true
+    const val PREF_SHIFT_SWIPE_SELECT = true
+    const val PREF_ENTER_SWIPE_SHORTCUTS = true
+    const val PREF_KEEP_CURSOR_COLUMN = true
     const val PREF_AUTOSPACE_AFTER_PUNCTUATION = false
     const val PREF_AUTOSPACE_AFTER_SUGGESTION = true
     const val PREF_AUTOSPACE_AFTER_GESTURE_TYPING = true

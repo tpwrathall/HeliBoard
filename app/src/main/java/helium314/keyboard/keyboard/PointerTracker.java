@@ -145,6 +145,11 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private long mStartTime;
     private boolean mInHorizontalSwipe = false;
     private boolean mInVerticalSwipe = false;
+    // swipe from shift key to select text
+    private boolean mInShiftSwipe = false;
+    // swipe from enter key onto another key for a shortcut (copy, paste, ...)
+    private boolean mInEnterSwipe = false;
+    @Nullable private Key mEnterSwipeHoverKey = null;
 
     // true if keyboard layout has been changed.
     private boolean mKeyboardLayoutHasBeenChanged;
@@ -714,6 +719,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         mIsAllowedDraggingFinger = sParams.mKeySelectionByDraggingFinger
                 || (key != null && key.isModifier())
                 || mKeyDetector.alwaysAllowsKeySelectionByDraggingFinger();
+        resetShiftAndEnterSwipe();
         if (key != null && isSwiper(key.getCode()) && !sInGesture) {
             mKeySwipeAllowed = true;
             sInKeySwipe = true;
@@ -769,6 +775,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             case Constants.CODE_SPACE -> sv.mSpaceSwipeHorizontal != KeyboardActionListener.SwipeAction.NONE
                     || sv.mSpaceSwipeVertical != KeyboardActionListener.SwipeAction.NONE;
             case KeyCode.DELETE -> sv.mDeleteSwipe > 0;
+            case KeyCode.SHIFT -> sv.mShiftSwipeSelect && mKeyboard != null && mKeyboard.mId.getElement().isAlphabet();
+            case Constants.CODE_ENTER -> sv.mEnterSwipeShortcuts;
             default -> false;
         };
     }
@@ -978,6 +986,44 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     mStartX += stepsX * sPointerStep;
                 }
             }
+        } else if (code == KeyCode.SHIFT) {
+            // Shift slider: select text left or right of the cursor
+            final int dX = x - mStartX;
+            final int dY = y - mStartY;
+            if (!mInShiftSwipe) {
+                if (abs(dY) > sPointerStep && abs(dY) > abs(dX)) {
+                    // finger is moving up towards the letters: keep the normal "slide from shift to type a capital"
+                    mKeySwipeAllowed = false;
+                    sInKeySwipe = false;
+                    onMoveEventInternal(x, y, eventTime);
+                    return;
+                }
+                if (abs(dX) < sPointerStep) return;
+                sTimerProxy.cancelKeyTimersOf(this);
+                mInShiftSwipe = true;
+                // undo the shift state change done when the key was pressed
+                if (mCurrentKey != null) callListenerOnRelease(mCurrentKey, KeyCode.SHIFT, true);
+                callListenerOnFinishSlidingInput();
+            }
+            final int steps = dX / sPointerStep;
+            if (steps != 0) {
+                mStartX += steps * sPointerStep;
+                sListener.onMoveShiftSelectPointer(steps);
+            }
+        } else if (code == Constants.CODE_ENTER) {
+            // Enter slider: highlight the key under the finger, shortcut is run on release
+            if (!mInEnterSwipe) {
+                if (Math.hypot(x - mStartX, y - mStartY) < 2 * sPointerStep) return;
+                sTimerProxy.cancelKeyTimersOf(this);
+                mInEnterSwipe = true;
+            }
+            Key hover = mKeyDetector.detectHitKey(x, y);
+            if (hover == mCurrentKey) hover = null; // back on enter means cancel
+            if (hover != mEnterSwipeHoverKey) {
+                setReleasedKeyGraphics(mEnterSwipeHoverKey, false);
+                mEnterSwipeHoverKey = hover;
+                setPressedKeyGraphics(hover, eventTime);
+            }
         } else if (code == KeyCode.DELETE) {
             // Delete slider
             int steps = (x - mStartX) / (sPointerStep * sv.mDeleteSwipe); // half speed for word delete
@@ -1106,6 +1152,22 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // Touchpad mode
             mTouchpadHandler.disableTouchpadMode();
 
+            if (mInShiftSwipe) {
+                mInShiftSwipe = false;
+                sListener.onEndShiftSelect();
+                return;
+            }
+            if (mInEnterSwipe) {
+                mInEnterSwipe = false;
+                final Key target = mEnterSwipeHoverKey;
+                mEnterSwipeHoverKey = null;
+                if (target != null) {
+                    setReleasedKeyGraphics(target, false);
+                    sListener.onEnterSwipeShortcut(target.getCode());
+                }
+                return;
+            }
+
             if (mInHorizontalSwipe || mInVerticalSwipe) {
                 mInHorizontalSwipe = false;
                 mInVerticalSwipe = false;
@@ -1218,7 +1280,20 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         onCancelEventInternal();
     }
 
+    private void resetShiftAndEnterSwipe() {
+        if (mInShiftSwipe) {
+            mInShiftSwipe = false;
+            sListener.onEndShiftSelect();
+        }
+        mInEnterSwipe = false;
+        if (mEnterSwipeHoverKey != null) {
+            setReleasedKeyGraphics(mEnterSwipeHoverKey, false);
+            mEnterSwipeHoverKey = null;
+        }
+    }
+
     private void onCancelEventInternal() {
+        resetShiftAndEnterSwipe();
         sTimerProxy.cancelKeyTimersOf(this);
         setReleasedKeyGraphics(mCurrentKey, true);
         resetKeySelectionByDraggingFinger();
