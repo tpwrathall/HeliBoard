@@ -103,6 +103,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     // Parameters for pointer handling.
     private static PointerTrackerParams sParams;
     private static final int sPointerStep = KtxKt.dpToPx(10, Resources.getSystem());
+    // finger distance for moving a selection by one line when swiping up / down from delete or shift
+    private static final int sSelectLineStep = KtxKt.dpToPx(25, Resources.getSystem());
     private static GestureStrokeRecognitionParams sGestureStrokeRecognitionParams;
     private static GestureStrokeDrawingParams sGestureStrokeDrawingParams;
 
@@ -150,6 +152,12 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     // swipe from enter key onto another key for a shortcut (copy, paste, ...)
     private boolean mInEnterSwipe = false;
     @Nullable private Key mEnterSwipeHoverKey = null;
+    // hold enter and tap a letter with another finger for a shortcut (like ctrl on a PC)
+    @Nullable private static PointerTracker sEnterHoldTracker = null;
+    private static long sEnterHoldStartTime = 0;
+    private static boolean sEnterChordUsed = false;
+    // letters pressed sooner than this after enter count as normal fast typing, not as a shortcut
+    private static final int ENTER_CHORD_MIN_HOLD_MS = 200;
 
     // true if keyboard layout has been changed.
     private boolean mKeyboardLayoutHasBeenChanged;
@@ -745,6 +753,14 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             mStartX = x;
             mStartY = y;
             mStartTime = SystemClock.elapsedRealtime();
+            if (key != null && key.getCode() == Constants.CODE_ENTER && Settings.getValues().mEnterSwipeShortcuts) {
+                sEnterHoldTracker = this;
+                sEnterHoldStartTime = mStartTime;
+                sEnterChordUsed = false;
+            } else if (sEnterHoldTracker != null && sEnterHoldTracker != this) {
+                // don't let a long press on enter interfere while using it for shortcuts
+                sTimerProxy.cancelKeyTimersOf(sEnterHoldTracker);
+            }
         }
     }
 
@@ -1010,6 +1026,12 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 mStartX += steps * sPointerStep;
                 sListener.onMoveShiftSelectPointer(steps);
             }
+            // up / down only once the sideways swipe has started, as sliding up from shift types a capital
+            final int lines = dY / sSelectLineStep;
+            if (lines != 0) {
+                mStartY += lines * sSelectLineStep;
+                sListener.onMoveSelectionVertically(lines, false);
+            }
         } else if (code == Constants.CODE_ENTER) {
             // Enter slider: highlight the key under the finger, shortcut is run on release
             if (!mInEnterSwipe) {
@@ -1034,6 +1056,16 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 }
                 mStartX += steps * sPointerStep;
                 sListener.onMoveDeletePointer(steps);
+            }
+            // up / down moves the selection by lines (mInHorizontalSwipe is used as "delete swipe active")
+            final int lines = (y - mStartY) / sSelectLineStep;
+            if (lines != 0) {
+                if (!mInHorizontalSwipe) {
+                    sTimerProxy.cancelKeyTimersOf(this);
+                    mInHorizontalSwipe = true;
+                }
+                mStartY += lines * sSelectLineStep;
+                sListener.onMoveSelectionVertically(lines, true);
             }
         }
     }
@@ -1085,6 +1117,9 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
 
         sTimerProxy.cancelUpdateBatchInputTimer(this);
+        if (tryEnterChord()) {
+            return;
+        }
         if (!sInGesture) {
             if (mCurrentKey != null && mCurrentKey.isModifier()) {
                 // Before processing an up event of modifier key, all pointers already being
@@ -1096,6 +1131,28 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
         onUpEventInternal(x, y, eventTime);
         sPointerTrackerQueue.remove(this);
+    }
+
+    /** if enter is held by another finger, run the shortcut for the key released here. Returns whether it did. */
+    private boolean tryEnterChord() {
+        final PointerTracker enterTracker = sEnterHoldTracker;
+        final Key key = mCurrentKey;
+        if (enterTracker == null || enterTracker == this || key == null || sInGesture || mIsTrackingForActionDisabled)
+            return false;
+        if (key.getCode() <= 0 || mStartTime - sEnterHoldStartTime < ENTER_CHORD_MIN_HOLD_MS)
+            return false;
+        if (!sListener.onEnterSwipeShortcut(key.getCode()))
+            return false; // no shortcut for this key: type it normally
+        sEnterChordUsed = true;
+        sTimerProxy.cancelKeyTimersOf(this);
+        sTimerProxy.cancelKeyTimersOf(enterTracker);
+        setReleasedKeyGraphics(key, true);
+        mCurrentKey = null;
+        mCurrentRepeatingKeyCode = Constants.NOT_A_CODE;
+        mIsDetectingGesture = false;
+        resetKeySelectionByDraggingFinger();
+        sPointerTrackerQueue.remove(this);
+        return true;
     }
 
     // Let this pointer tracker know that one of newer-than-this pointer trackers got an up event.
@@ -1122,6 +1179,24 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         mCurrentRepeatingKeyCode = Constants.NOT_A_CODE;
         // Release the last pressed key.
         setReleasedKeyGraphics(currentKey, true);
+
+        if (this == sEnterHoldTracker) {
+            final boolean chordUsed = sEnterChordUsed;
+            sEnterHoldTracker = null;
+            sEnterChordUsed = false;
+            if (chordUsed) {
+                // enter was used for shortcuts, so don't insert a line break
+                if (mKeySwipeAllowed) {
+                    mKeySwipeAllowed = false;
+                    sInKeySwipe = false;
+                }
+                mInEnterSwipe = false;
+                setReleasedKeyGraphics(mEnterSwipeHoverKey, false);
+                mEnterSwipeHoverKey = null;
+                dismissPopupKeysPanel();
+                return;
+            }
+        }
 
         if (mInHorizontalSwipe && currentKey.getCode() == KeyCode.DELETE) {
             sListener.onUpWithDeletePointerActive();
@@ -1294,6 +1369,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
     private void onCancelEventInternal() {
         resetShiftAndEnterSwipe();
+        if (this == sEnterHoldTracker) {
+            sEnterHoldTracker = null;
+            sEnterChordUsed = false;
+        }
         sTimerProxy.cancelKeyTimersOf(this);
         setReleasedKeyGraphics(mCurrentKey, true);
         resetKeySelectionByDraggingFinger();

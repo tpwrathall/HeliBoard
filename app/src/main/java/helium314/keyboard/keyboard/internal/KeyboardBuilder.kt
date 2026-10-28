@@ -144,7 +144,10 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
                 // "normal" width space keys are ignored, and the possibility of space being first in row is considered
                 key.mCode == Constants.CODE_SPACE && key.mWidth > row.first { !it.isSpacer && it.mCode != Constants.CODE_SPACE }.mWidth * 1.5f
             }
-            if (indexOfProperSpace >= 0) {
+            if (indexOfProperSpace >= 0 && Settings.getValues().mSplitFullWidthSpace) {
+                // keep a single space key that spans the gap between the two halves
+                row[indexOfProperSpace].mWidth += spacerRelativeWidth
+            } else if (indexOfProperSpace >= 0) {
                 val spaceLeft = row[indexOfProperSpace]
                 reduceSymbolAndActionKeyWidth(row)
                 insertIndex = row.indexOf(spaceLeft) + 1

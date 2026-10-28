@@ -32,7 +32,7 @@ import helium314.keyboard.latin.utils.GestureDataGatheringSettings
 import helium314.keyboard.latin.utils.RecapitalizeMode
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.prefs
-import java.text.BreakIterator
+import android.os.SystemClock
 import kotlin.math.abs
 
 class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inputLogic: InputLogic) : KeyboardActionListener {
@@ -60,9 +60,23 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         sendArrows = { lines -> sendVerticalArrows(lines) },
     )
 
-    // shift swipe selection state
-    private var shiftSelectAnchor = -1
-    private var shiftSelectActive = -1
+    // selection made by swiping from delete or shift: the anchor stays, the active end moves.
+    // Kept after the swipe, so the next swipe continues moving the same end if the selection is unchanged.
+    private var selAnchor = -1
+    private var selActive = -1
+    private var selGestureActive = false
+    // after shift + arrow fallback the app moved the active end, so it has to be read from the selection
+    private var selActiveUnknown = false
+    private val selectionTarget = VerticalCursorMover.Target(
+        from = { resolveSelActive(); selActive },
+        apply = { offset, changed ->
+            if (changed) {
+                selActive = offset
+                connection.setSelection(selAnchor, selActive)
+            }
+        },
+        fallback = { lines -> sendShiftArrows(lines) },
+    )
 
     // language slide state
     private var initialSubtype: InputMethodSubtype? = null
@@ -281,13 +295,9 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onMoveDeletePointer(steps: Int) {
-        inputLogic.finishInput()
-        val end = connection.expectedSelectionEnd
-        val actualSteps = actualSteps(steps)
-        val start = connection.expectedSelectionStart + actualSteps
-        if (start > end) return
-        gestureMoveBackHaptics()
-        connection.setSelection(start, end)
+        if (steps == 0 || !beginSelectionGesture(fromDelete = true)) return
+        val wordMode = settings.current.mDeleteSwipe == 2
+        moveSelectionActiveHorizontally(steps, wordMode)
     }
 
     private fun actualSteps(steps: Int): Int {
@@ -303,6 +313,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onUpWithDeletePointerActive() {
+        selGestureActive = false
         if (!connection.hasSelection()) return
         if (settings.current.mDeleteSwipeSelectOnly) return // keep the selection, user decides what to do with it
         inputLogic.finishInput()
@@ -322,58 +333,97 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onMoveShiftSelectPointer(steps: Int) {
-        if (steps == 0) return
-        if (shiftSelectAnchor < 0) {
-            inputLogic.finishInput()
-            val selStart = connection.expectedSelectionStart
-            val selEnd = connection.expectedSelectionEnd
-            if (selStart < 0 || selEnd < 0) return
-            // with an existing selection, keep its start and move its end
-            shiftSelectAnchor = selStart
-            shiftSelectActive = selEnd
-        }
-        val rtl = RichInputMethodManager.getInstance().currentSubtype.isRtlSubtype
-        val directedSteps = if (rtl) -steps else steps
-        val newActive = offsetMovedByCharacters(shiftSelectActive, directedSteps) ?: return
-        if (newActive == shiftSelectActive) return
-        if (directedSteps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
-        shiftSelectActive = newActive
-        verticalCursorMover.resetGoal()
-        connection.setSelection(shiftSelectAnchor, shiftSelectActive)
+        if (steps == 0 || !beginSelectionGesture(fromDelete = false)) return
+        moveSelectionActiveHorizontally(steps, false)
     }
 
     override fun onEndShiftSelect() {
-        shiftSelectAnchor = -1
-        shiftSelectActive = -1
+        selGestureActive = false
     }
 
-    /** returns [from] moved by [steps] characters (graphemes), or null if the surrounding text is not available */
-    private fun offsetMovedByCharacters(from: Int, steps: Int): Int? {
+    override fun onMoveSelectionVertically(lines: Int, fromDelete: Boolean) {
+        if (lines == 0 || !beginSelectionGesture(fromDelete)) return
+        if (settings.current.mKeepCursorColumn && metaState == 0) verticalCursorMover.move(lines, selectionTarget)
+        else sendShiftArrows(lines)
+    }
+
+    /**
+     * Called for every step of a delete / shift selection swipe. At the start of a swipe, continue with the
+     * previous swipe's anchor and moving end if the selection hasn't changed since, otherwise start from the
+     * current selection: delete moves its start, shift moves its end.
+     */
+    private fun beginSelectionGesture(fromDelete: Boolean): Boolean {
+        if (selGestureActive) return true
+        inputLogic.finishInput()
+        val start = connection.expectedSelectionStart
+        val end = connection.expectedSelectionEnd
+        if (start < 0 || end < 0) return false
+        resolveSelActive()
+        val continuesPrevious = selAnchor >= 0 && start != end
+                && minOf(selAnchor, selActive) == start && maxOf(selAnchor, selActive) == end
+        if (!continuesPrevious) {
+            if (fromDelete) {
+                selAnchor = end
+                selActive = start
+            } else {
+                selAnchor = start
+                selActive = end
+            }
+        }
+        selActiveUnknown = false
+        selGestureActive = true
+        return true
+    }
+
+    private fun resolveSelActive() {
+        if (!selActiveUnknown) return
+        val start = connection.expectedSelectionStart
+        val end = connection.expectedSelectionEnd
+        selActive = if (start == selAnchor) end else start
+        selActiveUnknown = false
+    }
+
+    private fun moveSelectionActiveHorizontally(steps: Int, wordMode: Boolean) {
+        resolveSelActive()
+        val rtl = RichInputMethodManager.getInstance().currentSubtype.isRtlSubtype
+        val directedSteps = if (rtl) -steps else steps
+        val newActive = offsetMovedBySteps(selActive, directedSteps, wordMode) ?: return
+        if (newActive == selActive) return
+        if (directedSteps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
+        selActive = newActive
+        verticalCursorMover.resetGoal()
+        connection.setSelection(selAnchor, selActive)
+    }
+
+    /** returns [from] moved by [steps] characters (or words), or null if the surrounding text is not available */
+    private fun offsetMovedBySteps(from: Int, steps: Int, wordMode: Boolean): Int? {
         val selStart = connection.expectedSelectionStart
         val selEnd = connection.expectedSelectionEnd
         if (selStart < 0 || selEnd < selStart) return null
-        val n = abs(steps) * 4 + 16
+        val n = abs(steps) * (if (wordMode) 50 else 4) + 16
         val before = connection.getTextBeforeCursor(n, 0) ?: ""
         val selected = if (selEnd > selStart) connection.getSelectedText(0) ?: return null else ""
         val after = connection.getTextAfterCursor(n, 0) ?: ""
         val text = "$before$selected$after"
         val base = selStart - before.length
-        var pos = from - base
+        val pos = from - base
         if (pos < 0 || pos > text.length) return null
-        val iterator = BreakIterator.getCharacterInstance()
-        iterator.setText(text)
-        for (i in 0 until abs(steps)) {
-            val next = if (steps > 0) {
-                if (pos >= text.length) break
-                iterator.following(pos)
-            } else {
-                if (pos <= 0) break
-                iterator.preceding(pos)
-            }
-            if (next == BreakIterator.DONE) break
-            pos = next
+        val iterator = if (wordMode) WordBreakIterator.getForSpacingAndPunctuations(settings.current.mSpacingAndPunctuations)
+            else CompatBreakIterator.graphemeInstance
+        val part = if (steps < 0) text.substring(0, pos) else text.substring(pos)
+        return from + stepsToCharCount(part, steps, iterator)
+    }
+
+    private fun sendShiftArrows(lines: Int) {
+        val ic = latinIME.currentInputConnection ?: return
+        val keyCode = if (lines < 0) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
+        val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        repeat(abs(lines)) {
+            val time = SystemClock.uptimeMillis()
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCode, 0, meta))
         }
-        return pos + base
+        selActiveUnknown = true
     }
 
     override fun onEnterSwipeShortcut(targetCode: Int): Boolean {

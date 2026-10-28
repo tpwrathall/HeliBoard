@@ -113,6 +113,7 @@ object Defaults {
     const val PREF_ENTER_SWIPE_SHORTCUTS = true
     const val PREF_KEEP_CURSOR_COLUMN = true
     const val PREF_SHOW_TEXT_FIELD_DIAGNOSTICS = true
+    const val PREF_SPLIT_FULL_WIDTH_SPACE = true
     const val PREF_AUTOSPACE_AFTER_PUNCTUATION = false
     const val PREF_AUTOSPACE_AFTER_SUGGESTION = true
     const val PREF_AUTOSPACE_AFTER_GESTURE_TYPING = true

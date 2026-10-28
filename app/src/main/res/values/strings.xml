@@ -235,7 +235,9 @@
     <string name="shift_swipe_select">Shift swipe to select</string>
     <string name="shift_swipe_select_summary">Swipe left or right from the shift key to select text. Sliding up onto a letter still types a capital</string>
     <string name="enter_swipe_shortcuts">Enter swipe shortcuts</string>
-    <string name="enter_swipe_shortcuts_summary">Slide from the enter key onto a letter and release: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
+    <string name="enter_swipe_shortcuts_summary">Slide from enter onto a letter, or hold enter and tap a letter: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
+    <string name="split_full_width_space">Full-width space bar when split</string>
+    <string name="split_full_width_space_summary">In split keyboard mode, the space bar stretches across the gap instead of being split in two</string>
     <string name="show_text_field_diagnostics">Text field test popup</string>
     <string name="show_text_field_diagnostics_summary">When opening a text field, briefly show which cursor features the app supports</string>
     <string name="keep_cursor_column">Keep cursor column</string>

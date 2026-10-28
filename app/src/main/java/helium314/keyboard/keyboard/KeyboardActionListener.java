@@ -127,6 +127,8 @@ public interface KeyboardActionListener {
     void onMoveShiftSelectPointer(int steps);
     /** Shift key swipe finished. */
     void onEndShiftSelect();
+    /** Swipe up / down from delete or shift: move the moving end of the selection by lines (negative = up). */
+    void onMoveSelectionVertically(int lines, boolean fromDelete);
     /** Swipe from enter released on another key: run the shortcut for that key, returns whether one exists. */
     boolean onEnterSwipeShortcut(int targetCode);
     void resetMetaState();
@@ -191,6 +193,8 @@ public interface KeyboardActionListener {
         public void onMoveShiftSelectPointer(int steps) {}
         @Override
         public void onEndShiftSelect() {}
+        @Override
+        public void onMoveSelectionVertically(int lines, boolean fromDelete) {}
         @Override
         public boolean onEnterSwipeShortcut(int targetCode) {
             return false;

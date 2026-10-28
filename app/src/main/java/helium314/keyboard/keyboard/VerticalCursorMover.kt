@@ -34,6 +34,29 @@ class VerticalCursorMover(
     private var requestInFlight = false
     private var generation = 0
     private var pendingLines = 0
+    private var pendingTarget: Target? = null
+
+    /** what is moved: the cursor, or the moving end of a selection */
+    class Target(
+        /** current offset of the moving position */
+        val from: () -> Int,
+        /** set the new offset; [changed] is false if the position stays the same */
+        val apply: (offset: Int, changed: Boolean) -> Unit,
+        /** fallback when the app doesn't help: send this many arrow key presses (negative = up) */
+        val fallback: (lines: Int) -> Unit,
+    )
+
+    private val cursorTarget = Target(
+        from = { connection.expectedSelectionEnd },
+        apply = { offset, changed ->
+            if (changed || connection.hasSelection()) {
+                beforeMove()
+                connection.setSelection(offset, offset)
+                afterMove()
+            }
+        },
+        fallback = { sendArrows(it) },
+    )
 
     private var goalX: Float? = null
     private var lastPlacedOffset = -1
@@ -54,16 +77,17 @@ class VerticalCursorMover(
         generation++
         if (requestInFlight) {
             requestInFlight = false
-            val p = pendingLines
-            pendingLines = 0
-            if (p != 0) sendArrows(p)
+            flushPendingAsArrows()
         }
     }
 
-    fun move(lines: Int) {
+    /** move the cursor up (negative) or down by [lines] */
+    fun move(lines: Int) = move(lines, cursorTarget)
+
+    fun move(lines: Int, target: Target) {
         if (lines == 0) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            sendArrows(lines)
+            target.fallback(lines)
             return
         }
         val now = SystemClock.uptimeMillis()
@@ -71,9 +95,11 @@ class VerticalCursorMover(
         lastUseTime = now
         val cached = info
         if (cached != null) {
-            applyMoves(cached, lines)
+            applyMoves(cached, lines, target)
             return
         }
+        if (pendingTarget != null && pendingTarget !== target) flushPendingAsArrows()
+        pendingTarget = target
         pendingLines += lines
         if (!requestInFlight) requestBounds()
     }
@@ -104,8 +130,10 @@ class VerticalCursorMover(
                 info = boundsInfo
                 lastUseTime = SystemClock.uptimeMillis()
                 val p = pendingLines
+                val t = pendingTarget ?: cursorTarget
                 pendingLines = 0
-                applyMoves(boundsInfo, p)
+                pendingTarget = null
+                applyMoves(boundsInfo, p, t)
             }
         } catch (e: Exception) {
             requestInFlight = false
@@ -115,16 +143,18 @@ class VerticalCursorMover(
 
     private fun flushPendingAsArrows() {
         val p = pendingLines
+        val t = pendingTarget ?: cursorTarget
         pendingLines = 0
-        if (p != 0) sendArrows(p)
+        pendingTarget = null
+        if (p != 0) t.fallback(p)
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun applyMoves(info: TextBoundsInfo, lines: Int) {
+    private fun applyMoves(info: TextBoundsInfo, lines: Int, target: Target) {
         if (lines == 0) return
-        val start = connection.expectedSelectionEnd
+        val start = target.from()
         if (start < 0) {
-            sendArrows(lines)
+            target.fallback(lines)
             return
         }
         if (start != lastPlacedOffset && !keepGoalOnce) goalX = null // cursor was moved by something else
@@ -133,7 +163,8 @@ class VerticalCursorMover(
         var remaining = lines
         // whether the text bounds info reaches the end of the text (only needed at the bottom, so computed lazily)
         val reachesEndOfText by lazy {
-            val charsToEnd = info.endIndex - start
+            // text after cursor is counted from the end of the selection
+            val charsToEnd = info.endIndex - connection.expectedSelectionEnd
             charsToEnd >= 0 && (connection.getTextAfterCursor(charsToEnd + 1, 0)?.length ?: Int.MAX_VALUE) <= charsToEnd
         }
         while (remaining != 0) {
@@ -146,17 +177,13 @@ class VerticalCursorMover(
             offset = next
             remaining -= if (remaining < 0) -1 else 1
         }
-        if (offset != start || connection.hasSelection()) {
-            beforeMove()
-            connection.setSelection(offset, offset)
-            lastPlacedOffset = offset
-            afterMove()
-        }
+        target.apply(offset, offset != start)
+        lastPlacedOffset = offset
         if (remaining != 0) {
             // target line not available (e.g. scrolled out of view or empty last line): let the app handle it
             this.info = null
             keepGoalOnce = goalX != null
-            sendArrows(remaining)
+            target.fallback(remaining)
         }
     }
 
