@@ -33,16 +33,18 @@ jobs:
           name: HeliBoard-custom
           path: app/build/outputs/apk/debug/*-debug*.apk
 
-      - name: Publish APK as a release (direct download link)
+      - name: Publish APK as a new release (older builds are kept)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/*-debug*.apk HeliBoard-custom.apk
-          gh release delete custom-latest --yes --cleanup-tag || true
-          gh release create custom-latest HeliBoard-custom.apk \
-            --target "$GITHUB_SHA" --prerelease \
-            --title "HeliBoard custom build (${GITHUB_SHA::7})" \
-            --notes "Custom build with column-keeping cursor, shift/delete swipe selection and enter-swipe shortcuts. Built from ${GITHUB_SHA}."
+          N="${GITHUB_RUN_NUMBER}"
+          APK="HeliBoard-custom-build-${N}.apk"
+          cp app/build/outputs/apk/debug/*-debug*.apk "$APK"
+          git log -1 --format=%B | grep -v -e '^Co-Authored-By:' -e '^Claude-Session:' > notes.txt
+          gh release create "build-${N}" "$APK" \
+            --target "$GITHUB_SHA" --latest \
+            --title "Build ${N} - $(date -u +%Y-%m-%d) (${GITHUB_SHA::7})" \
+            --notes-file notes.txt
 
       - name: Archive reports for failed job
         uses: actions/upload-artifact@v4
