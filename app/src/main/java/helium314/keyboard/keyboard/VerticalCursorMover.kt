@@ -37,12 +37,15 @@ class VerticalCursorMover(
 
     private var goalX: Float? = null
     private var lastPlacedOffset = -1
+    // arrow keys were sent as fallback, so the cursor position is not known but the goal x is still valid
+    private var keepGoalOnce = false
 
     val isSupported get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
     /** forget the remembered horizontal position (cursor moved sideways) */
     fun resetGoal() {
         goalX = null
+        keepGoalOnce = false
     }
 
     /** text may have changed, so cached character positions can't be trusted any more */
@@ -124,11 +127,22 @@ class VerticalCursorMover(
             sendArrows(lines)
             return
         }
-        if (start != lastPlacedOffset) goalX = null // cursor was moved by something else
+        if (start != lastPlacedOffset && !keepGoalOnce) goalX = null // cursor was moved by something else
+        keepGoalOnce = false
         var offset = start
         var remaining = lines
+        // whether the text bounds info reaches the end of the text (only needed at the bottom, so computed lazily)
+        val reachesEndOfText by lazy {
+            val charsToEnd = info.endIndex - start
+            charsToEnd >= 0 && (connection.getTextAfterCursor(charsToEnd + 1, 0)?.length ?: Int.MAX_VALUE) <= charsToEnd
+        }
         while (remaining != 0) {
-            val next = lineMove(info, offset, remaining < 0) ?: break
+            val next = lineMove(info, offset, remaining < 0) { reachesEndOfText } ?: break
+            if (next == STAY) {
+                // already on the first / last line: do nothing, sending an arrow key would jump to the start / end
+                remaining = 0
+                break
+            }
             offset = next
             remaining -= if (remaining < 0) -1 else 1
         }
@@ -141,14 +155,14 @@ class VerticalCursorMover(
         if (remaining != 0) {
             // target line not available (e.g. scrolled out of view or empty last line): let the app handle it
             this.info = null
-            goalX = null
+            keepGoalOnce = goalX != null
             sendArrows(remaining)
         }
     }
 
     /** returns the offset on the line above / below [offset] closest to the goal x, or null if not possible */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun lineMove(info: TextBoundsInfo, offset: Int, up: Boolean): Int? {
+    private fun lineMove(info: TextBoundsInfo, offset: Int, up: Boolean, reachesEndOfText: () -> Boolean): Int? {
         val first = info.startIndex
         val end = info.endIndex // exclusive
         val r = RectF()
@@ -159,7 +173,10 @@ class VerticalCursorMover(
             info.getCharacterBounds(offset, r)
             cursorX = r.left
         } else if (offset == end && offset - 1 >= first) {
-            if (isLinefeed(info, offset - 1)) return null // cursor on an empty last line, position unknown
+            if (isLinefeed(info, offset - 1)) {
+                // cursor on an empty last line
+                return if (!up && reachesEndOfText()) STAY else null
+            }
             info.getCharacterBounds(offset - 1, r)
             cursorX = r.right
         } else {
@@ -186,7 +203,13 @@ class VerticalCursorMover(
                 }
             }
         }
-        if (lineTop.isNaN()) return null
+        if (lineTop.isNaN()) {
+            // no line in that direction among the known characters
+            if (up) return if (first == 0) STAY else null // first line of the text, or text above is not known
+            if (!reachesEndOfText()) return null // more text below that is not known
+            // last line of the text, but if the text ends with a line break there is an empty line below it
+            return if (end - 1 >= first && isLinefeed(info, end - 1) && offset < end) end else STAY
+        }
 
         // characters on that line, in index order
         var lo = -1
@@ -221,5 +244,7 @@ class VerticalCursorMover(
 
     companion object {
         private const val CACHE_TIMEOUT_MS = 2000L
+        /** returned by [lineMove] when the cursor is already on the first / last line */
+        private const val STAY = -2
     }
 }
