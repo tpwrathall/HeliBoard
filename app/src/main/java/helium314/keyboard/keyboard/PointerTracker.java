@@ -1431,6 +1431,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             sIsShiftLongPressSuppressed = false;
             return;
         }
+        // enter is held for shortcuts (hold enter + tap a letter), so its popup would only get in the way
+        if (code == Constants.CODE_ENTER && Settings.getValues().mEnterSwipeShortcuts) return;
         if (code == KeyCode.SYMBOL_ALPHA
             && (!Settings.getValues().mLongPressSymbolsForNumpad
                 || mKeyboard.mId.getElement() != KeyboardElement.SYMBOLS

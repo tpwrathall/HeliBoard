@@ -20,6 +20,7 @@ import helium314.keyboard.latin.AudioAndHapticFeedbackManager
 import helium314.keyboard.latin.EmojiAltPhysicalKeyDetector
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.RichInputMethodManager
+import helium314.keyboard.latin.TextFieldDiagnostics
 import helium314.keyboard.latin.common.Constants
 import helium314.keyboard.latin.common.InputPointers
 import helium314.keyboard.latin.common.WordBreakIterator
@@ -32,6 +33,7 @@ import helium314.keyboard.latin.utils.GestureDataGatheringSettings
 import helium314.keyboard.latin.utils.RecapitalizeMode
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.prefs
+import android.os.Build
 import android.os.SystemClock
 import kotlin.math.abs
 
@@ -147,6 +149,11 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             else -> if (!bypassVerticalCursorMover) verticalCursorMover.invalidate()
         }
         when (primaryCode) {
+            KeyCode.TEXT_FIELD_TEST -> {
+                inputLogic.finishInput()
+                TextFieldDiagnostics.typeReport(latinIME)
+                return
+            }
             KeyCode.TOGGLE_AUTOCORRECT -> return settings.toggleAutoCorrect()
             KeyCode.TOGGLE_INCOGNITO_MODE -> {
                 settings.toggleAlwaysIncognitoMode()
@@ -387,7 +394,12 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         resolveSelActive()
         val rtl = RichInputMethodManager.getInstance().currentSubtype.isRtlSubtype
         val directedSteps = if (rtl) -steps else steps
-        val newActive = offsetMovedBySteps(selActive, directedSteps, wordMode) ?: return
+        val newActive = offsetMovedBySteps(selActive, directedSteps, wordMode)
+        if (newActive == null) {
+            // text around the selection not available: let the app move the selection with shift + arrow keys
+            sendShiftArrowsHorizontally(directedSteps, wordMode)
+            return
+        }
         if (newActive == selActive) return
         if (directedSteps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
         selActive = newActive
@@ -397,21 +409,47 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     /** returns [from] moved by [steps] characters (or words), or null if the surrounding text is not available */
     private fun offsetMovedBySteps(from: Int, steps: Int, wordMode: Boolean): Int? {
-        val selStart = connection.expectedSelectionStart
-        val selEnd = connection.expectedSelectionEnd
-        if (selStart < 0 || selEnd < selStart) return null
         val n = abs(steps) * (if (wordMode) 50 else 4) + 16
-        val before = connection.getTextBeforeCursor(n, 0) ?: ""
-        val selected = if (selEnd > selStart) connection.getSelectedText(0) ?: return null else ""
-        val after = connection.getTextAfterCursor(n, 0) ?: ""
-        val text = "$before$selected$after"
-        val base = selStart - before.length
+        val text: CharSequence
+        val base: Int
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // ask the app directly, the keyboard's cached text and selection may lag behind it
+            val ic = latinIME.currentInputConnection ?: return null
+            val surrounding = try { ic.getSurroundingText(n, n, 0) } catch (e: Exception) { null } ?: return null
+            if (surrounding.offset < 0) return null
+            text = surrounding.text
+            base = surrounding.offset
+        } else {
+            val selStart = connection.expectedSelectionStart
+            val selEnd = connection.expectedSelectionEnd
+            if (selStart < 0 || selEnd < selStart) return null
+            val before = connection.getTextBeforeCursor(n, 0) ?: ""
+            val selected = if (selEnd > selStart) connection.getSelectedText(0) ?: return null else ""
+            val after = connection.getTextAfterCursor(n, 0) ?: ""
+            text = "$before$selected$after"
+            base = selStart - before.length
+        }
         val pos = from - base
         if (pos < 0 || pos > text.length) return null
         val iterator = if (wordMode) WordBreakIterator.getForSpacingAndPunctuations(settings.current.mSpacingAndPunctuations)
             else CompatBreakIterator.graphemeInstance
-        val part = if (steps < 0) text.substring(0, pos) else text.substring(pos)
+        val part = if (steps < 0) text.subSequence(0, pos) else text.subSequence(pos, text.length)
         return from + stepsToCharCount(part, steps, iterator)
+    }
+
+    private fun sendShiftArrowsHorizontally(steps: Int, wordMode: Boolean) {
+        val ic = latinIME.currentInputConnection ?: return
+        val keyCode = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        var meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        if (wordMode) meta = meta or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        repeat(abs(steps)) {
+            val time = SystemClock.uptimeMillis()
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCode, 0, meta))
+        }
+        if (steps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
+        verticalCursorMover.resetGoal()
+        selActiveUnknown = true
     }
 
     private fun sendShiftArrows(lines: Int) {

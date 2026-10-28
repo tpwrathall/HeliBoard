@@ -75,7 +75,6 @@ fun AdvancedSettingsScreen(
         if (prefs.getInt(Settings.PREF_DELETE_SWIPE, Defaults.PREF_DELETE_SWIPE) != 0) Settings.PREF_DELETE_SWIPE_SELECT_ONLY else null,
         Settings.PREF_SHIFT_SWIPE_SELECT,
         Settings.PREF_ENTER_SWIPE_SHORTCUTS,
-        Settings.PREF_SHOW_TEXT_FIELD_DIAGNOSTICS,
         Settings.PREF_SPACE_TO_CHANGE_LANG,
         Settings.PREFS_LONG_PRESS_SYMBOLS_FOR_NUMPAD,
         Settings.PREF_ENABLE_EMOJI_ALT_PHYSICAL_KEY,
@@ -181,9 +180,6 @@ fun createAdvancedSettings(context: Context) = listOf(
     },
     Setting(context, Settings.PREF_KEEP_CURSOR_COLUMN, R.string.keep_cursor_column, R.string.keep_cursor_column_summary) {
         SwitchPreference(it, Defaults.PREF_KEEP_CURSOR_COLUMN)
-    },
-    Setting(context, Settings.PREF_SHOW_TEXT_FIELD_DIAGNOSTICS, R.string.show_text_field_diagnostics, R.string.show_text_field_diagnostics_summary) {
-        SwitchPreference(it, Defaults.PREF_SHOW_TEXT_FIELD_DIAGNOSTICS)
     },
     Setting(context, Settings.PREF_SPACE_TO_CHANGE_LANG,
         R.string.prefs_long_press_keyboard_to_change_lang,

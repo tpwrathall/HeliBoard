@@ -123,7 +123,6 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_SHIFT_SWIPE_SELECT = "shift_swipe_select";
     public static final String PREF_ENTER_SWIPE_SHORTCUTS = "enter_swipe_shortcuts";
     public static final String PREF_KEEP_CURSOR_COLUMN = "keep_cursor_column";
-    public static final String PREF_SHOW_TEXT_FIELD_DIAGNOSTICS = "show_text_field_diagnostics";
     public static final String PREF_SPLIT_FULL_WIDTH_SPACE = "split_full_width_space";
     public static final String PREF_AUTOSPACE_AFTER_PUNCTUATION = "autospace_after_punctuation";
     public static final String PREF_AUTOSPACE_AFTER_SUGGESTION = "autospace_after_suggestion";

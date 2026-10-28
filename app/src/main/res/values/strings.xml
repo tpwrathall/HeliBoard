@@ -238,8 +238,7 @@
     <string name="enter_swipe_shortcuts_summary">Slide from enter onto a letter, or hold enter and tap a letter: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
     <string name="split_full_width_space">Full-width space bar when split</string>
     <string name="split_full_width_space_summary">In split keyboard mode, the space bar stretches across the gap instead of being split in two</string>
-    <string name="show_text_field_diagnostics">Text field test popup</string>
-    <string name="show_text_field_diagnostics_summary">When opening a text field, briefly show which cursor features the app supports</string>
+    <string name="text_field_test" tools:keep="@string/text_field_test">Text field test (types which cursor features this app supports)</string>
     <string name="keep_cursor_column">Keep cursor column</string>
     <string name="keep_cursor_column_summary">Moving the cursor up or down keeps it at the same horizontal position, like on iOS. Falls back to arrow keys in apps that don\'t report text positions</string>
     <!-- Preferences item and dialog title for backup and restore -->
