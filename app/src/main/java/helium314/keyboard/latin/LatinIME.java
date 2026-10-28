@@ -710,11 +710,19 @@ public class LatinIME extends InputMethodService implements
     public void onStartInputView(final EditorInfo editorInfo, final boolean restarting) {
         mHandler.onStartInputView(editorInfo, restarting);
         mStatsUtilsManager.onStartInputView();
+        TextFieldDiagnostics.onStartInputView(this, editorInfo, restarting);
+    }
+
+    @Override
+    public void onUpdateCursorAnchorInfo(final android.view.inputmethod.CursorAnchorInfo cursorAnchorInfo) {
+        super.onUpdateCursorAnchorInfo(cursorAnchorInfo);
+        TextFieldDiagnostics.onCursorAnchorInfo(cursorAnchorInfo);
     }
 
     @Override
     public void onFinishInputView(final boolean finishingInput) {
         StatsUtils.onFinishInputView();
+        TextFieldDiagnostics.onFinishInput();
         mHandler.onFinishInputView(finishingInput);
         mStatsUtilsManager.onFinishInputView();
         mGestureConsumer = GestureConsumer.NULL_GESTURE_CONSUMER;

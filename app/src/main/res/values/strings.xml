@@ -236,6 +236,8 @@
     <string name="shift_swipe_select_summary">Swipe left or right from the shift key to select text. Sliding up onto a letter still types a capital</string>
     <string name="enter_swipe_shortcuts">Enter swipe shortcuts</string>
     <string name="enter_swipe_shortcuts_summary">Slide from the enter key onto a letter and release: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
+    <string name="show_text_field_diagnostics">Text field test popup</string>
+    <string name="show_text_field_diagnostics_summary">When opening a text field, briefly show which cursor features the app supports</string>
     <string name="keep_cursor_column">Keep cursor column</string>
     <string name="keep_cursor_column_summary">Moving the cursor up or down keeps it at the same horizontal position, like on iOS. Falls back to arrow keys in apps that don\'t report text positions</string>
     <!-- Preferences item and dialog title for backup and restore -->
