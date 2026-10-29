@@ -21,6 +21,8 @@ import helium314.keyboard.latin.EmojiAltPhysicalKeyDetector
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.RichInputMethodManager
 import helium314.keyboard.latin.TextFieldDiagnostics
+import helium314.keyboard.latin.DebugLog
+import helium314.keyboard.latin.SelectionWatcher
 import helium314.keyboard.latin.common.Constants
 import helium314.keyboard.latin.common.InputPointers
 import helium314.keyboard.latin.common.WordBreakIterator
@@ -76,7 +78,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             },
             select = { anchor, offset ->
                 inputLogic.setExpectCursorMove()
-                connection.setSelection(anchor, offset)
+                selectRange(anchor, offset)
                 verticalCursorMover.resetGoal()
                 // continue this selection with delete / shift swipes
                 selAnchor = anchor
@@ -99,7 +101,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         apply = { offset, changed ->
             if (changed) {
                 selActive = offset
-                connection.setSelection(selAnchor, selActive)
+                selectRange(selAnchor, selActive)
             }
         },
         fallback = { lines -> sendShiftArrows(lines) },
@@ -162,6 +164,8 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean) {
+        if (primaryCode == KeyCode.DELETE || primaryCode == KeyCode.ARROW_UP || primaryCode == KeyCode.ARROW_DOWN)
+            DebugLog.log("kb key ${Constants.printableCode(primaryCode)}, sel ${connection.expectedSelectionStart}-${connection.expectedSelectionEnd}")
         when (primaryCode) {
             KeyCode.ARROW_UP, KeyCode.ARROW_DOWN -> {
                 if (!bypassVerticalCursorMover && metaState == 0 && settings.current.mKeepCursorColumn
@@ -174,6 +178,12 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             else -> if (!bypassVerticalCursorMover) verticalCursorMover.invalidate()
         }
         when (primaryCode) {
+            KeyCode.DEBUG_LOG -> {
+                inputLogic.finishInput()
+                val report = DebugLog.takeReport(latinIME.currentInputEditorInfo?.packageName)
+                latinIME.currentInputConnection?.commitText(report, 1)
+                return
+            }
             KeyCode.TRACKPAD -> {
                 TrackpadOverlay.toggle(latinIME, floatingCursorCallbacks)
                 return
@@ -350,6 +360,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onUpWithDeletePointerActive() {
         selGestureActive = false
+        DebugLog.log("kb delete swipe end, sel ${connection.expectedSelectionStart}-${connection.expectedSelectionEnd}")
         if (!connection.hasSelection()) return
         if (settings.current.mDeleteSwipeSelectOnly) return // keep the selection, user decides what to do with it
         inputLogic.finishInput()
@@ -379,20 +390,38 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         moveSelectionActiveHorizontally(steps, false)
     }
 
+    // jump to line start / end: where it jumped from, so tapping the same key again goes back
+    private var jumpFrom = -1
+    private var jumpTo = -1
+    private var jumpToStart = false
+
     override fun onSelectionJumpToLineEdge(toStart: Boolean) {
         if (!selGestureActive) return
         resolveSelActive()
         val from = selActive
         val anchor = selAnchor
         if (from < 0 || anchor < 0) return
+        if (jumpFrom >= 0 && jumpTo == from && jumpToStart == toStart) {
+            // same key again: back to the selection before the jump
+            DebugLog.log("kb jump back $from -> $jumpFrom")
+            selActive = jumpFrom
+            jumpFrom = -1
+            performHapticFeedback(HapticEvent.KEY_PRESS)
+            selectRange(selAnchor, selActive)
+            return
+        }
         val apply: (Int?) -> Unit = { visualEdge ->
             val target = visualEdge ?: textLineEdge(from, toStart)
+            DebugLog.log("kb jump ${if (toStart) "start" else "end"}: $from -> $target (visual $visualEdge)")
             if (target != null && target != from && selAnchor == anchor) {
+                jumpFrom = from
+                jumpTo = target
+                jumpToStart = toStart
                 selActive = target
                 selActiveUnknown = false
                 verticalCursorMover.resetGoal()
                 performHapticFeedback(HapticEvent.KEY_PRESS)
-                connection.setSelection(selAnchor, selActive)
+                selectRange(selAnchor, selActive)
             }
         }
         verticalCursorMover.visualLineEdge(from, toStart, apply)
@@ -474,7 +503,17 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         }
         selActiveUnknown = false
         selGestureActive = true
+        jumpFrom = -1
+        DebugLog.log("kb selection gesture ${if (fromDelete) "delete" else "shift"}: sel $start-$end, anchor $selAnchor, moving $selActive" +
+                if (continuesPrevious) " (continued)" else "")
         return true
+    }
+
+    /** sets the selection always start-first: some apps (Keep) otherwise keep a backwards selection, and then
+     *  e.g. delete moves the cursor instead of deleting the selected text */
+    private fun selectRange(a: Int, b: Int) {
+        DebugLog.log("kb set sel $a-$b (anchor $selAnchor)")
+        connection.setSelection(minOf(a, b), maxOf(a, b))
     }
 
     private fun resolveSelActive() {
@@ -499,7 +538,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         if (directedSteps < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics(true)
         selActive = newActive
         verticalCursorMover.resetGoal()
-        connection.setSelection(selAnchor, selActive)
+        selectRange(selAnchor, selActive)
     }
 
     /** returns [from] moved by [steps] characters (or words), or null if the surrounding text is not available */
@@ -566,39 +605,52 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         resolveSelActive()
         val anchor = selAnchor
         val before = selActive
+        if (anchor < 0 || before < 0) return
+        // the selection changes the app reports, including short-lived ones (some apps move it, then move it back)
+        val seen = mutableListOf<Pair<Int, Int>>()
+        val listener: (Int, Int) -> Unit = { a, b -> seen.add(a to b) }
+        SelectionWatcher.add(listener)
         val keyCode = if (lines < 0) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
         val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        DebugLog.log("kb shift+${if (lines < 0) "up" else "down"} x${abs(lines)}, anchor $anchor, moving $before")
         repeat(abs(lines)) {
             val time = SystemClock.uptimeMillis()
             ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
             ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCode, 0, meta))
         }
-        if (anchor < 0 || before < 0) {
-            selActiveUnknown = true
-            return
-        }
         shiftArrowPending = true
         handler.postDelayed({
+            SelectionWatcher.remove(listener)
             shiftArrowPending = false
-            val sel = readAppSelection()
-            var newActive: Int? = null
-            if (sel != null) {
-                val (s, e) = sel
-                newActive = when {
-                    s == anchor && e != anchor -> e
-                    e == anchor && s != anchor -> s
-                    else -> if (lines < 0) s else e
+            // the first reported selection that keeps the anchor and moved the other end
+            var newActive: Int? = seen.firstNotNullOfOrNull { (s, e) ->
+                when {
+                    s == anchor && e != before && e != anchor -> e
+                    e == anchor && s != before && s != anchor -> s
+                    else -> null
+                }
+            }
+            if (newActive == null) {
+                val sel = readAppSelection()
+                if (sel != null) {
+                    val (s, e) = sel
+                    newActive = when {
+                        s == anchor && e != anchor -> e
+                        e == anchor && s != anchor -> s
+                        else -> if (lines < 0) s else e
+                    }
                 }
             }
             if (newActive == null || newActive == before)
                 newActive = offsetMovedByTextLines(before, lines) ?: before
+            DebugLog.log("kb shift arrows: app reported $seen -> moving end $newActive")
             selActive = newActive
             selActiveUnknown = false
-            connection.setSelection(anchor, newActive)
+            selectRange(anchor, newActive)
             val queued = shiftArrowQueued
             shiftArrowQueued = 0
             if (queued != 0) sendShiftArrows(queued)
-        }, 80)
+        }, 150)
     }
 
     /** the selection as the app has it right now (start <= end), or null if unknown */

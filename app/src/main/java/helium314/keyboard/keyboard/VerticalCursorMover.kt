@@ -8,6 +8,7 @@ import android.view.inputmethod.TextBoundsInfo
 import android.view.inputmethod.TextBoundsInfoResult
 import androidx.annotation.RequiresApi
 import helium314.keyboard.latin.CursorTracker
+import helium314.keyboard.latin.DebugLog
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.RichInputConnection
 
@@ -126,6 +127,7 @@ class VerticalCursorMover(
                 requestInFlight = false
                 val boundsInfo = result.textBoundsInfo
                 if (result.resultCode != TextBoundsInfoResult.CODE_SUCCESS || boundsInfo == null) {
+                    DebugLog.log("lines: no character positions (code ${result.resultCode})")
                     // no character positions, try the app's cursor position + "select at point" instead
                     val p = pendingLines
                     val t = pendingTarget ?: cursorTarget
@@ -273,6 +275,7 @@ class VerticalCursorMover(
     private fun gestureOrFallback(lines: Int, target: Target) {
         if (lines == 0) return
         if (!CursorPlacer.isSupported(latinIME) || CursorTracker.lastInfo == null) {
+            DebugLog.log("lines: no cursor position / select-at-point, arrow keys x$lines")
             target.fallback(lines)
             return
         }
@@ -342,7 +345,10 @@ class VerticalCursorMover(
     private fun gestureTryLine(target: Target, active: Int, goal: Float, marker: CursorTracker.Marker, lines: Int, extra: Int) {
         val direction = if (lines < 0) -1 else 1
         val y = marker.centerY + (lines + extra * direction) * marker.height
+        DebugLog.log("lines: from $active at ${marker.x.toInt()},${marker.centerY.toInt()} h ${marker.height.toInt()}, try y ${y.toInt()} goal x ${goal.toInt()}" +
+                " bounds ${CursorTracker.editorBounds()?.toShortString()} kbTop ${CursorPlacer.keyboardTopOnScreen()?.toInt()}")
         if (!isUsablePoint(y)) {
+            DebugLog.log("lines: target outside the field / screen, scrolling")
             // outside the text field or the visible screen: never "select" there, some apps (browsers) then
             // replace the selection with nothing. Scroll the text instead, if there is more.
             scrollStep(target, active, goal, marker, direction)
@@ -358,6 +364,7 @@ class VerticalCursorMover(
     }
 
     private fun gestureDone(target: Target, offset: Int, goal: Float, y: Float, height: Float) {
+        DebugLog.log("lines: -> $offset")
         target.apply(offset, true)
         gestureGoalX = goal
         lastGestureOffset = offset
@@ -366,6 +373,7 @@ class VerticalCursorMover(
     }
 
     private fun gestureStay(target: Target, active: Int, goal: Float, marker: CursorTracker.Marker) {
+        DebugLog.log("lines: stay at $active")
         target.apply(active, true)
         gestureGoalX = goal
         lastGestureOffset = active

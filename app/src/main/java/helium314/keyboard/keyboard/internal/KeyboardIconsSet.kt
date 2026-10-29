@@ -159,6 +159,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
                     ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
+                    ToolbarKey.DEBUG_LOG -> R.drawable.ic_debug_log
                 })
             }
         } }
@@ -225,6 +226,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
                     ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
+                    ToolbarKey.DEBUG_LOG -> R.drawable.ic_debug_log
                 })
             }
         } }
@@ -291,6 +293,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.TEXT_FIELD_TEST -> R.drawable.ic_text_field_test
                     ToolbarKey.TRACKPAD -> R.drawable.ic_trackpad
+                    ToolbarKey.DEBUG_LOG -> R.drawable.ic_debug_log
                 })
             }
         } }

@@ -31,6 +31,7 @@ import helium314.keyboard.keyboard.internal.TypingTimeRecorder;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.R;
 import helium314.keyboard.latin.common.Constants;
+import helium314.keyboard.latin.DebugLog;
 import helium314.keyboard.latin.common.CoordinateUtils;
 import helium314.keyboard.latin.common.InputPointers;
 import helium314.keyboard.latin.define.DebugFlags;
@@ -166,8 +167,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private int mCaretLastY;
     // swipe up from space shows the edit menu
     private boolean mInEditMenu = false;
-    // width of the area at the left and right edge of the keyboard where an edge swipe can start
-    private static final int sEdgeZone = KtxKt.dpToPx(14, Resources.getSystem());
     // hold enter and tap a letter with another finger for a shortcut (like ctrl on a PC)
     @Nullable private static PointerTracker sEnterHoldTracker = null;
     private static long sEnterHoldStartTime = 0;
@@ -762,14 +761,19 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             sInKeySwipe = true;
         }
         mEdgeSwipeSide = 0;
-        if (key != null && !mKeySwipeAllowed && !sInGesture && mKeyboard != null
-                && Settings.getValues().mEdgeSwipeSelect && mKeyboard.mId.getElement().isAlphabet()) {
-            if (x < sEdgeZone) mEdgeSwipeSide = -1;
-            else if (x > mKeyboard.mOccupiedWidth - sEdgeZone) mEdgeSwipeSide = 1;
+        if (!mKeySwipeAllowed && !sInGesture && mKeyboard != null
+                && helium314.keyboard.keyboard.internal.KeyboardParams.hasEdgeSwipeBars(mKeyboard.mId)) {
+            // touch on one of the bars at the left / right edge
+            final int bar = helium314.keyboard.keyboard.internal.KeyboardParams.edgeSwipeBarWidth();
+            if (x < bar) mEdgeSwipeSide = -1;
+            else if (x > mKeyboard.mOccupiedWidth - bar) mEdgeSwipeSide = 1;
             if (mEdgeSwipeSide != 0) {
-                // the key is still typed when it's just tapped
                 mKeySwipeAllowed = true;
                 sInKeySwipe = true;
+                mStartX = x;
+                mStartY = y;
+                mStartTime = SystemClock.elapsedRealtime();
+                DebugLog.log("edge swipe bar touched: " + (mEdgeSwipeSide < 0 ? "left" : "right"));
             }
         }
         mKeyboardLayoutHasBeenChanged = false;
@@ -1160,9 +1164,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     private void onEdgeSwipe(final int x, final int y) {
         final boolean likeDelete = mEdgeSwipeSide > 0;
         if (!mInEdgeSwipe) {
-            // start only with a sideways move away from the edge, so normal typing and sliding to other keys still work
-            final int dX = x - mStartX;
-            if (abs(dX) < sPointerStep || abs(dX) < abs(y - mStartY)) return;
+            if (abs(x - mStartX) < sPointerStep && abs(y - mStartY) < sSelectLineStep) return;
             sTimerProxy.cancelKeyTimersOf(this);
             mInEdgeSwipe = true;
             sSelectionSwipeTracker = this;
@@ -1185,7 +1187,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         // todo (later): move key swipe stuff to KeyboardActionListener (and finally extend it)
         if (mKeySwipeAllowed) {
-            onKeySwipe(oldKey.getCode(), x, y, eventTime);
+            // oldKey is null on the edge swipe bars
+            onKeySwipe(oldKey == null ? Constants.NOT_A_CODE : oldKey.getCode(), x, y, eventTime);
             return;
         }
 

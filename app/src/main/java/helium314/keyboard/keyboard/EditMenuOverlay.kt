@@ -84,12 +84,14 @@ class EditMenuOverlay private constructor(
         val top = (tmpPos[1] - myScreenPos[1]).toFloat()
         padRect.set(left, top, left + keyboardView.width, top + keyboardView.height)
         itemRadius = min(26 * density, padRect.height() / 7)
-        radius = min(padRect.height() - itemRadius * 1.6f, 150 * density)
-        centerY = (startScreenY - myScreenPos[1]).coerceIn(padRect.top + radius + itemRadius, padRect.bottom - itemRadius / 2)
+        val margin = 6 * density
+        // keep the lowest items (at the ends of the arc) fully inside the keyboard
+        centerY = min(startScreenY - myScreenPos[1], padRect.bottom - itemRadius - margin)
+        radius = min(150 * density, centerY - padRect.top - itemRadius - margin).coerceAtLeast(itemRadius * 2.5f)
         centerX = (startScreenX - myScreenPos[0]).coerceIn(padRect.left + radius + itemRadius, padRect.right - radius - itemRadius)
         items.forEachIndexed { i, item ->
-            // from left (180°) to right (0°) over the top
-            val angle = PI - PI * i / (items.size - 1)
+            // from left to right over the top, the ends a little above the center
+            val angle = (PI - END_ANGLE) - (PI - 2 * END_ANGLE) * i / (items.size - 1)
             item.x = centerX + (radius * cos(angle)).toFloat()
             item.y = centerY - (radius * sin(angle)).toFloat()
         }
@@ -131,6 +133,7 @@ class EditMenuOverlay private constructor(
 
     companion object {
         private const val TAG = "EditMenuOverlay"
+        private const val END_ANGLE = PI / 14 // the ends of the arc are this much above horizontal
         private var current: EditMenuOverlay? = null
         private val keyboardPos = IntArray(2)
 

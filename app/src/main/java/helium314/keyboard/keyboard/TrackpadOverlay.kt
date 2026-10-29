@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import helium314.keyboard.latin.CursorTracker
+import helium314.keyboard.latin.DebugLog
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.settings.Settings
@@ -69,7 +70,10 @@ class TrackpadOverlay private constructor(
     private var downTime = 0L
     private var movedDistance = 0f
     private var placing = false
-    private val supported = CursorPlacer.isSupported(ime)
+    private var supported = true
+    // caret mode: finger movement that arrives before the overlay is laid out
+    private var pendingDx = 0f
+    private var pendingDy = 0f
 
     // double tap and drag to select
     private var lastTapUpTime = 0L
@@ -79,6 +83,10 @@ class TrackpadOverlay private constructor(
     private var selecting = false
     private var selectAnchor = -1
     private var lastLiveSelectTime = 0L
+    private var lastSelectedOffset = -1
+    private var lastLiveCaretX = Float.NaN
+    private var lastLiveCaretY = Float.NaN
+    private var finalSelectPending = false
 
     private val colors = Settings.getValues().mColors
     private val padPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -166,7 +174,16 @@ class TrackpadOverlay private constructor(
 
     override fun onDraw(canvas: Canvas) {
         if (!updateRects()) return
-        if (caretX.isNaN()) initCaret()
+        if (caretX.isNaN()) {
+            initCaret()
+            if (pendingDx != 0f || pendingDy != 0f) {
+                caretX += pendingDx * GAIN
+                caretY += pendingDy * GAIN
+                pendingDx = 0f
+                pendingDy = 0f
+                clampCaret()
+            }
+        }
         val r = 12 * density
         canvas.drawRoundRect(padRect, r, r, padPaint)
         val cx = padRect.centerX()
@@ -189,13 +206,19 @@ class TrackpadOverlay private constructor(
 
     /** caret mode: move the caret by the finger movement */
     private fun moveBy(dx: Float, dy: Float) {
+        movedDistance += abs(dx) + abs(dy)
         if (caretX.isNaN()) {
-            if (!updateRects()) return
+            // not laid out yet (the caret would start at the left edge): apply the movement once it is drawn
+            if (width == 0 || !updateRects()) {
+                pendingDx += dx
+                pendingDy += dy
+                invalidate()
+                return
+            }
             initCaret()
         }
         caretX += dx * GAIN
         caretY += dy * GAIN
-        movedDistance += abs(dx) + abs(dy)
         clampCaret()
         invalidate()
     }
@@ -218,7 +241,9 @@ class TrackpadOverlay private constructor(
                 selecting = now - lastTapUpTime < DOUBLE_TAP_MS && hypot(x - lastTapX, y - lastTapY) < 60 * density
                 if (selecting) {
                     selectAnchor = if (lastPlacedOffset >= 0) lastPlacedOffset else callbacks.currentOffset()
+                    lastSelectedOffset = -1
                     if (selectAnchor < 0) selecting = false
+                    DebugLog.log("trackpad: select from $selectAnchor")
                 }
                 dragging = true
                 lastTouchX = x
@@ -237,9 +262,12 @@ class TrackpadOverlay private constructor(
                 clampCaret()
                 invalidate()
                 if (selecting) {
-                    // show the selection while moving, but not too often
+                    // show the selection while moving, but not too often, and not for tiny finger movements
                     val now = SystemClock.uptimeMillis()
-                    if (now - lastLiveSelectTime > LIVE_SELECT_INTERVAL_MS) {
+                    val movedEnough = lastLiveCaretX.isNaN() || hypot(caretX - lastLiveCaretX, caretY - lastLiveCaretY) > 4 * density
+                    if (movedEnough && now - lastLiveSelectTime > LIVE_SELECT_INTERVAL_MS) {
+                        lastLiveCaretX = caretX
+                        lastLiveCaretY = caretY
                         lastLiveSelectTime = now
                         selectToCaret()
                     }
@@ -258,7 +286,8 @@ class TrackpadOverlay private constructor(
                 if (selecting) {
                     selecting = false
                     lastTapUpTime = 0L
-                    selectToCaret()
+                    lastLiveCaretX = Float.NaN
+                    if (placing) finalSelectPending = true else selectToCaret()
                 } else {
                     if (isTap) {
                         lastTapUpTime = now
@@ -285,29 +314,45 @@ class TrackpadOverlay private constructor(
     }
 
     private fun placeCursorAtCaret() {
-        if (!supported || placing) return
+        if (placing) return
         val (sx, sy) = caretOnScreen()
         placing = true
         lastPlacedOffset = -1
         CursorPlacer.offsetAt(ime, sx, sy, caretHeight) { offset ->
             placing = false
             if (offset != null) {
+                supported = true
                 lastPlacedOffset = offset
                 callbacks.place(offset)
+            } else {
+                supported = CursorPlacer.isSupported(ime) || CursorTracker.marker() != null
+                // couldn't place it: put the floating cursor back where the real cursor is
+                CursorTracker.marker()?.let { setCaretFromScreen(it) }
+                invalidate()
             }
+            runPendingSelect()
         }
     }
 
     private fun selectToCaret() {
-        if (!supported || placing || selectAnchor < 0) return
+        if (placing || selectAnchor < 0) return
         val anchor = selectAnchor
         val (sx, sy) = caretOnScreen()
         placing = true
         CursorPlacer.offsetAt(ime, sx, sy, caretHeight) { offset ->
             placing = false
-            if (offset != null) callbacks.select(anchor, offset)
-            else callbacks.select(anchor, anchor)
+            val target = offset ?: lastSelectedOffset.takeIf { it >= 0 } ?: anchor
+            // always set it, the lookup itself may have changed the selection in the app
+            lastSelectedOffset = target
+            callbacks.select(anchor, target)
+            runPendingSelect()
         }
+    }
+
+    private fun runPendingSelect() {
+        if (!finalSelectPending) return
+        finalSelectPending = false
+        selectToCaret()
     }
 
     companion object {

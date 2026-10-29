@@ -8,6 +8,10 @@ package helium314.keyboard.latin;
 
 import android.content.Context;
 import android.media.AudioManager;
+import android.media.AudioAttributes;
+import android.os.Build;
+import android.os.VibrationAttributes;
+import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
@@ -26,6 +30,7 @@ import helium314.keyboard.latin.settings.SettingsValues;
 public final class AudioAndHapticFeedbackManager {
     private AudioManager mAudioManager;
     private Vibrator mVibrator;
+    private Context mContext;
 
     private SettingsValues mSettingsValues;
     private boolean mSoundOn;
@@ -47,6 +52,7 @@ public final class AudioAndHapticFeedbackManager {
     }
 
     private void initInternal(final Context context) {
+        mContext = context.getApplicationContext();
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
     }
@@ -68,7 +74,40 @@ public final class AudioAndHapticFeedbackManager {
         if (mVibrator == null || milliseconds <= 0) {
             return;
         }
-        mVibrator.vibrate(milliseconds);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrateEffect(VibrationEffect.createOneShot(milliseconds, VibrationEffect.DEFAULT_AMPLITUDE));
+        } else {
+            mVibrator.vibrate(milliseconds);
+        }
+    }
+
+    /**
+     * Custom build: vibrate through the vibrator with proper attributes. The old way (view haptics with
+     * FLAG_IGNORE_GLOBAL_SETTING) is ignored since Android 13 when the system touch feedback is off, so the
+     * keyboard's own vibration setting did nothing.
+     */
+    private void vibrateEffect(final VibrationEffect effect) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // touch usage follows the system touch feedback strength; if the system touch feedback is switched
+            // off, use media usage, so the keyboard's own vibration setting still works
+            final int usage = isSystemTouchFeedbackOn() ? VibrationAttributes.USAGE_TOUCH : VibrationAttributes.USAGE_MEDIA;
+            mVibrator.vibrate(effect, VibrationAttributes.createForUsage(usage));
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mVibrator.vibrate(effect, new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+        }
+    }
+
+    private boolean isSystemTouchFeedbackOn() {
+        if (mContext == null) return true;
+        try {
+            return android.provider.Settings.System.getInt(mContext.getContentResolver(),
+                    android.provider.Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) != 0;
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     private boolean reevaluateIfSoundIsOn() {
@@ -110,7 +149,16 @@ public final class AudioAndHapticFeedbackManager {
             vibrate(mSettingsValues.mKeypressVibrationDuration);
             return;
         }
-        // Go ahead with the system default
+        // Go ahead with the system default effect, played through the vibrator (see vibrateEffect)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasVibrator()) {
+            final int effectId = switch (hapticEvent) {
+                case KEY_LONG_PRESS -> VibrationEffect.EFFECT_HEAVY_CLICK;
+                case GESTURE_MOVE -> VibrationEffect.EFFECT_TICK;
+                default -> VibrationEffect.EFFECT_CLICK;
+            };
+            vibrateEffect(VibrationEffect.createPredefined(effectId));
+            return;
+        }
         if (viewToPerformHapticFeedbackOn != null) {
             viewToPerformHapticFeedbackOn.performHapticFeedback(
                     hapticEvent.feedbackConstant,

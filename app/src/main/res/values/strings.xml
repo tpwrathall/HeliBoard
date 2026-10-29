@@ -250,6 +250,7 @@
     <string name="split_full_width_space">Full-width space bar when split</string>
     <string name="split_full_width_space_summary">In split keyboard mode, the space bar stretches across the gap instead of being split in two</string>
     <string name="trackpad" tools:keep="@string/trackpad">Trackpad</string>
+    <string name="debug_log" tools:keep="@string/debug_log">Debug log (types what the keyboard and app did recently)</string>
     <string name="text_field_test" tools:keep="@string/text_field_test">Text field test (types which cursor features this app supports)</string>
     <string name="keep_cursor_column">Keep cursor column</string>
     <string name="keep_cursor_column_summary">Moving the cursor up or down keeps it at the same horizontal position, like on iOS. Falls back to arrow keys in apps that don\'t report text positions</string>

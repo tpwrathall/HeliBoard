@@ -356,6 +356,26 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         windowContentView.addView(mDrawingPreviewPlacerView);
     }
 
+    // custom build: bars at the left and right edge to start selection swipes from
+    private final Paint mEdgeBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    @Override
+    protected void onDraw(@NonNull final Canvas canvas) {
+        super.onDraw(canvas);
+        final Keyboard keyboard = getKeyboard();
+        if (keyboard == null || !helium314.keyboard.keyboard.internal.KeyboardParams.hasEdgeSwipeBars(keyboard.mId)) return;
+        final float bar = helium314.keyboard.keyboard.internal.KeyboardParams.edgeSwipeBarWidth();
+        final float density = getResources().getDisplayMetrics().density;
+        final float inset = 5 * density;
+        final float top = keyboard.mTopPadding + 6 * density;
+        final float bottom = keyboard.mOccupiedHeight - 6 * density;
+        final float radius = (bar - 2 * inset) / 2;
+        mEdgeBarPaint.setColor(Settings.getValues().mColors.get(ColorType.KEY_TEXT));
+        mEdgeBarPaint.setAlpha(45);
+        canvas.drawRoundRect(inset, top, bar - inset, bottom, radius, radius, mEdgeBarPaint);
+        canvas.drawRoundRect(keyboard.mOccupiedWidth - bar + inset, top, keyboard.mOccupiedWidth - inset, bottom, radius, radius, mEdgeBarPaint);
+    }
+
     // Implements {@link DrawingProxy#onKeyPressed(Key,boolean)}.
     @Override
     public void onKeyPressed(@NonNull final Key key, final boolean withPreview) {

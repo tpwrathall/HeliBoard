@@ -31,6 +31,21 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 
 public class KeyboardParams {
+    /** custom build: width of the edge swipe bars */
+    public static final int EDGE_SWIPE_BAR_DP = 22;
+
+    public static int edgeSwipeBarWidth() {
+        return (int) (EDGE_SWIPE_BAR_DP * android.content.res.Resources.getSystem().getDisplayMetrics().density);
+    }
+
+    /** custom build: whether the keyboard has the edge swipe bars (letters and symbols layouts) */
+    public static boolean hasEdgeSwipeBars(@Nullable final KeyboardId id) {
+        if (id == null || !Settings.getValues().mEdgeSwipeSelect) return false;
+        final helium314.keyboard.keyboard.KeyboardElement element = id.getElement();
+        return element.isAlphabet() || element == helium314.keyboard.keyboard.KeyboardElement.SYMBOLS
+                || element == helium314.keyboard.keyboard.KeyboardElement.SYMBOLS_SHIFTED;
+    }
+
     private static final int DEFAULT_KEYBOARD_COLUMNS = 10;
     public static final int DEFAULT_KEYBOARD_ROWS = 4;
 
@@ -231,6 +246,12 @@ public class KeyboardParams {
             mRightPadding = (int) (keyboardAttr.getFraction(
                     R.styleable.Keyboard_keyboardRightPadding, width, width, 0)
                     * sv.mSidePaddingScale);
+            if (hasEdgeSwipeBars(mId)) {
+                // custom build: bars at the left and right edge to start selection swipes from
+                final int bar = edgeSwipeBarWidth();
+                mLeftPadding += bar;
+                mRightPadding += bar;
+            }
 
             mBaseWidth = mOccupiedWidth - mLeftPadding - mRightPadding;
             final float defaultKeyWidthFactor = context.getResources().getInteger(R.integer.config_screen_metrics) > 2 ? 0.9f : 1f;

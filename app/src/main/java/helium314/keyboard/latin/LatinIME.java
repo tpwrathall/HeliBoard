@@ -992,6 +992,9 @@ public class LatinIME extends InputMethodService implements
                                   final int composingSpanStart, final int composingSpanEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 composingSpanStart, composingSpanEnd);
+        DebugLog.log("app sel " + oldSelStart + "-" + oldSelEnd + " -> " + newSelStart + "-" + newSelEnd
+                + (composingSpanStart >= 0 ? " comp " + composingSpanStart + "-" + composingSpanEnd : ""));
+        SelectionWatcher.onUpdate(newSelStart, newSelEnd);
         if (DebugFlags.DEBUG_ENABLED) {
             Log.i(TAG, "onUpdateSelection: oss=" + oldSelStart + ", ose=" + oldSelEnd
                     + ", nss=" + newSelStart + ", nse=" + newSelEnd
