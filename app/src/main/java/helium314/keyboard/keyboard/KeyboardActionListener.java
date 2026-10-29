@@ -131,11 +131,27 @@ public interface KeyboardActionListener {
     void onMoveSelectionVertically(int lines, boolean fromDelete);
     /** Swipe from enter released on another key: run the shortcut for that key, returns whether one exists. */
     boolean onEnterSwipeShortcut(int targetCode);
+    /** Swipe from the left (fromDelete false) or right edge of the keyboard: select by letters. */
+    void onMoveEdgeSelectPointer(int steps, boolean fromDelete);
+    /** Shift / delete tapped while selecting with another finger: move the selection end to the start / end of the line. */
+    void onSelectionJumpToLineEdge(boolean toStart);
+    /** Long press on space: start moving a floating cursor. Returns whether it started. */
+    boolean onSpaceCaretStart();
+    void onSpaceCaretMove(int dx, int dy);
+    /** [apply]: place the cursor at the floating cursor, otherwise just hide it */
+    void onSpaceCaretEnd(boolean apply);
+    /** Horizontal space swipe that then moves up / down. */
+    void onSpaceSwipeMoveVertically(int lines);
+    /** Swipe up from space: show the edit menu, with the swipe start in keyboard view coordinates. */
+    boolean onEditMenuStart(int x, int y);
+    void onEditMenuMove(int x, int y);
+    /** [apply]: run the highlighted item, otherwise just close the menu */
+    void onEditMenuEnd(boolean apply);
     void resetMetaState();
 
     KeyboardActionListener EMPTY_LISTENER = new Adapter();
 
-    enum SwipeAction { NONE, MOVE_CURSOR, SWITCH_LANGUAGE, TOGGLE_NUMPAD, TOGGLE_DPAD, HIDE_KEYBOARD, TOUCHPAD_MODE }
+    enum SwipeAction { NONE, MOVE_CURSOR, SWITCH_LANGUAGE, TOGGLE_NUMPAD, TOGGLE_DPAD, HIDE_KEYBOARD, TOUCHPAD_MODE, EDIT_MENU }
     enum CustomAction { SHOW_INPUT_METHOD_PICKER, TOUCHPAD_ON, TOUCHPAD_OFF, PERFORM_HAPTIC }
 
     class Adapter implements KeyboardActionListener {
@@ -199,6 +215,28 @@ public interface KeyboardActionListener {
         public boolean onEnterSwipeShortcut(int targetCode) {
             return false;
         }
+        @Override
+        public void onMoveEdgeSelectPointer(int steps, boolean fromDelete) {}
+        @Override
+        public void onSelectionJumpToLineEdge(boolean toStart) {}
+        @Override
+        public boolean onSpaceCaretStart() {
+            return false;
+        }
+        @Override
+        public void onSpaceCaretMove(int dx, int dy) {}
+        @Override
+        public void onSpaceCaretEnd(boolean apply) {}
+        @Override
+        public void onSpaceSwipeMoveVertically(int lines) {}
+        @Override
+        public boolean onEditMenuStart(int x, int y) {
+            return false;
+        }
+        @Override
+        public void onEditMenuMove(int x, int y) {}
+        @Override
+        public void onEditMenuEnd(boolean apply) {}
         @Override
         public void resetMetaState() {}
     }

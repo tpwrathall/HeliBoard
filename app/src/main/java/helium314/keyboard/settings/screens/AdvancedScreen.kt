@@ -74,6 +74,9 @@ fun AdvancedSettingsScreen(
         Settings.PREF_DELETE_SWIPE,
         if (prefs.getInt(Settings.PREF_DELETE_SWIPE, Defaults.PREF_DELETE_SWIPE) != 0) Settings.PREF_DELETE_SWIPE_SELECT_ONLY else null,
         Settings.PREF_SHIFT_SWIPE_SELECT,
+        Settings.PREF_EDGE_SWIPE_SELECT,
+        Settings.PREF_DISABLE_DELETE_REPEAT,
+        Settings.PREF_SPACE_LONG_PRESS_CURSOR,
         Settings.PREF_ENTER_SWIPE_SHORTCUTS,
         Settings.PREF_SPACE_TO_CHANGE_LANG,
         Settings.PREFS_LONG_PRESS_SYMBOLS_FOR_NUMPAD,
@@ -136,6 +139,7 @@ fun createAdvancedSettings(context: Context) = listOf(
             stringResource(R.string.space_swipe_toggle_dpad_entry) to KeyboardActionListener.SwipeAction.TOGGLE_DPAD.name,
             stringResource(R.string.space_swipe_hide_keyboard_entry) to KeyboardActionListener.SwipeAction.HIDE_KEYBOARD.name,
             stringResource(R.string.space_swipe_touchpad_mode_entry) to KeyboardActionListener.SwipeAction.TOUCHPAD_MODE.name,
+            stringResource(R.string.space_swipe_edit_menu_entry) to KeyboardActionListener.SwipeAction.EDIT_MENU.name,
             stringResource(R.string.action_none) to KeyboardActionListener.SwipeAction.NONE.name,
         )
         ListPreference(it, items, Defaults.PREF_SPACE_VERTICAL_SWIPE)
@@ -174,6 +178,15 @@ fun createAdvancedSettings(context: Context) = listOf(
     },
     Setting(context, Settings.PREF_SHIFT_SWIPE_SELECT, R.string.shift_swipe_select, R.string.shift_swipe_select_summary) {
         SwitchPreference(it, Defaults.PREF_SHIFT_SWIPE_SELECT)
+    },
+    Setting(context, Settings.PREF_EDGE_SWIPE_SELECT, R.string.edge_swipe_select, R.string.edge_swipe_select_summary) {
+        SwitchPreference(it, Defaults.PREF_EDGE_SWIPE_SELECT)
+    },
+    Setting(context, Settings.PREF_DISABLE_DELETE_REPEAT, R.string.disable_delete_repeat, R.string.disable_delete_repeat_summary) {
+        SwitchPreference(it, Defaults.PREF_DISABLE_DELETE_REPEAT)
+    },
+    Setting(context, Settings.PREF_SPACE_LONG_PRESS_CURSOR, R.string.space_long_press_cursor, R.string.space_long_press_cursor_summary) {
+        SwitchPreference(it, Defaults.PREF_SPACE_LONG_PRESS_CURSOR) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_ENTER_SWIPE_SHORTCUTS, R.string.enter_swipe_shortcuts, R.string.enter_swipe_shortcuts_summary) {
         SwitchPreference(it, Defaults.PREF_ENTER_SWIPE_SHORTCUTS)

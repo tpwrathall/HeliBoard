@@ -113,6 +113,11 @@ object Defaults {
     const val PREF_ENTER_SWIPE_SHORTCUTS = true
     const val PREF_KEEP_CURSOR_COLUMN = true
     const val PREF_SPLIT_FULL_WIDTH_SPACE = true
+    const val PREF_DISABLE_DELETE_REPEAT = true
+    const val PREF_EDGE_SWIPE_SELECT = true
+    const val PREF_SPACE_LONG_PRESS_CURSOR = true
+    const val PREF_SPLIT_DUPLICATE_COLUMNS = 2
+    const val PREF_TOOLBAR_KEY_ON_RIGHT = true
     const val PREF_AUTOSPACE_AFTER_PUNCTUATION = false
     const val PREF_AUTOSPACE_AFTER_SUGGESTION = true
     const val PREF_AUTOSPACE_AFTER_GESTURE_TYPING = true

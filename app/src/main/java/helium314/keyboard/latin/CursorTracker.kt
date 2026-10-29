@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package helium314.keyboard.latin
 
+import android.graphics.RectF
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -54,6 +56,17 @@ object CursorTracker {
         info.matrix.mapPoints(pts)
         if (pts[3] <= pts[1]) return null
         return Marker(pts[0], pts[1], pts[3])
+    }
+
+    /** bounds of the text field on screen, if the app reports them (Android 13+) */
+    fun editorBounds(): RectF? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+        val info = lastInfo ?: return null
+        val local = info.editorBoundsInfo?.editorBounds ?: return null
+        if (local.isEmpty) return null
+        val rect = RectF(local)
+        info.matrix.mapRect(rect)
+        return rect
     }
 
     /** calls [callback] with the next reported cursor position, or with null after [timeoutMs] */

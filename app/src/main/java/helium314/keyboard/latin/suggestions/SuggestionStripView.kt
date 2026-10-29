@@ -124,6 +124,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     private val defaultToolbarBackground: Drawable = toolbarExpandKey.background
     private val enabledToolKeyBackground = GradientDrawable()
     private var direction = 1 // 1 if LTR, -1 if RTL
+    private var iconDirection = 1 // for the toolbar key icon, -1 if the strip is mirrored
 
     private val toolbarKeyLayoutParams = LinearLayout.LayoutParams(
         resources.getDimensionPixelSize(R.dimen.config_suggestions_strip_edge_key_width),
@@ -221,10 +222,24 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         else {
             newLayoutDirection = if (isRtlLanguage) LAYOUT_DIRECTION_RTL else LAYOUT_DIRECTION_LTR
             direction = if (isRtlLanguage) -1 else 1
-            toolbarExpandKey.scaleX = (if (toolbarContainer.visibility != VISIBLE) 1f else -1f) * direction
+            iconDirection = direction
+            toolbarExpandKey.scaleX = (if (toolbarContainer.visibility != VISIBLE) 1f else -1f) * iconDirection
         }
         layoutDirection = newLayoutDirection
         suggestionsStrip.layoutDirection = newLayoutDirection
+        if (Settings.getValues().mToolbarKeyOnRight) {
+            // mirror the strip so the toolbar key is on the other side, but keep the contents in the language direction
+            val languageRtl = if (Settings.getValues().mVarToolbarDirection) isRtlLanguage
+                else resources.configuration.layoutDirection == LAYOUT_DIRECTION_RTL
+            val contentDirection = if (languageRtl) LAYOUT_DIRECTION_RTL else LAYOUT_DIRECTION_LTR
+            layoutDirection = if (languageRtl) LAYOUT_DIRECTION_LTR else LAYOUT_DIRECTION_RTL
+            suggestionsStrip.layoutDirection = contentDirection
+            toolbarContainer.layoutDirection = contentDirection
+            toolbar.layoutDirection = contentDirection
+            pinnedKeys.layoutDirection = contentDirection
+            iconDirection = if (languageRtl) 1 else -1
+            toolbarExpandKey.scaleX = (if (toolbarContainer.visibility != VISIBLE) 1f else -1f) * iconDirection
+        }
     }
 
     fun setToolbarVisibility(toolbarVisible: Boolean) {
@@ -238,7 +253,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             }
         }
 
-        toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * direction
+        toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * iconDirection
     }
 
     fun setSuggestions(suggestions: SuggestedWords, isRtlLanguage: Boolean) {

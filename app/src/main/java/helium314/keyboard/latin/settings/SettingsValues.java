@@ -93,6 +93,11 @@ public class SettingsValues {
     public final boolean mEnterSwipeShortcuts;
     public final boolean mKeepCursorColumn;
     public final boolean mSplitFullWidthSpace;
+    public final boolean mDisableDeleteRepeat;
+    public final boolean mEdgeSwipeSelect;
+    public final boolean mSpaceLongPressCursor;
+    public final int mSplitDuplicateColumns;
+    public final boolean mToolbarKeyOnRight;
     public final boolean mAutospaceAfterPunctuation;
     public final boolean mAutospaceAfterSuggestion;
     public final boolean mAutospaceAfterGestureTyping;
@@ -290,6 +295,11 @@ public class SettingsValues {
         mEnterSwipeShortcuts = prefs.getBoolean(Settings.PREF_ENTER_SWIPE_SHORTCUTS, Defaults.PREF_ENTER_SWIPE_SHORTCUTS);
         mKeepCursorColumn = prefs.getBoolean(Settings.PREF_KEEP_CURSOR_COLUMN, Defaults.PREF_KEEP_CURSOR_COLUMN);
         mSplitFullWidthSpace = prefs.getBoolean(Settings.PREF_SPLIT_FULL_WIDTH_SPACE, Defaults.PREF_SPLIT_FULL_WIDTH_SPACE);
+        mDisableDeleteRepeat = prefs.getBoolean(Settings.PREF_DISABLE_DELETE_REPEAT, Defaults.PREF_DISABLE_DELETE_REPEAT);
+        mEdgeSwipeSelect = prefs.getBoolean(Settings.PREF_EDGE_SWIPE_SELECT, Defaults.PREF_EDGE_SWIPE_SELECT);
+        mSpaceLongPressCursor = prefs.getBoolean(Settings.PREF_SPACE_LONG_PRESS_CURSOR, Defaults.PREF_SPACE_LONG_PRESS_CURSOR);
+        mSplitDuplicateColumns = prefs.getInt(Settings.PREF_SPLIT_DUPLICATE_COLUMNS, Defaults.PREF_SPLIT_DUPLICATE_COLUMNS);
+        mToolbarKeyOnRight = prefs.getBoolean(Settings.PREF_TOOLBAR_KEY_ON_RIGHT, Defaults.PREF_TOOLBAR_KEY_ON_RIGHT);
         mAutospaceAfterPunctuation = prefs.getBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, Defaults.PREF_AUTOSPACE_AFTER_PUNCTUATION);
         mAutospaceAfterSuggestion = prefs.getBoolean(Settings.PREF_AUTOSPACE_AFTER_SUGGESTION, Defaults.PREF_AUTOSPACE_AFTER_SUGGESTION);
         mAutospaceAfterGestureTyping = prefs.getBoolean(Settings.PREF_AUTOSPACE_AFTER_GESTURE_TYPING, Defaults.PREF_AUTOSPACE_AFTER_GESTURE_TYPING);

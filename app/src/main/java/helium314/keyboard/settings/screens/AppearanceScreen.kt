@@ -79,6 +79,8 @@ fun AppearanceScreen(
             )
             Settings.PREF_SPLIT_SPACER_SCALE_PREFIX else null,
         Settings.PREF_SPLIT_FULL_WIDTH_SPACE,
+        Settings.PREF_SPLIT_DUPLICATE_COLUMNS,
+        Settings.PREF_TOOLBAR_KEY_ON_RIGHT,
         if (prefs.getBoolean(Settings.PREF_THEME_KEY_BORDERS, Defaults.PREF_THEME_KEY_BORDERS))
             Settings.PREF_KEY_GAP_SCALE_PREFIX else null,
         Settings.PREF_KEYBOARD_HEIGHT_SCALE_PREFIX,
@@ -253,6 +255,20 @@ fun createAppearanceSettings(context: Context) = listOf(
             range = 0.5f..2f,
             description = { "${(100 * it).toInt()}%" }
         ) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+    },
+    Setting(context, Settings.PREF_SPLIT_DUPLICATE_COLUMNS, R.string.split_duplicate_columns) {
+        val items = listOf(
+            stringResource(R.string.auto_correction_threshold_mode_off) to 0,
+            "1" to 1,
+            "2" to 2,
+            "3" to 3,
+        )
+        ListPreference(it, items, Defaults.PREF_SPLIT_DUPLICATE_COLUMNS, description = stringResource(R.string.split_duplicate_columns_summary)) {
+            KeyboardSwitcher.getInstance().setThemeNeedsReload()
+        }
+    },
+    Setting(context, Settings.PREF_TOOLBAR_KEY_ON_RIGHT, R.string.toolbar_key_on_right, R.string.toolbar_key_on_right_summary) {
+        SwitchPreference(it, Defaults.PREF_TOOLBAR_KEY_ON_RIGHT) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_SPLIT_FULL_WIDTH_SPACE, R.string.split_full_width_space, R.string.split_full_width_space_summary) {
         SwitchPreference(it, Defaults.PREF_SPLIT_FULL_WIDTH_SPACE) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }

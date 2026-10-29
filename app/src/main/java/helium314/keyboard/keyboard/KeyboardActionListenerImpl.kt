@@ -34,6 +34,8 @@ import helium314.keyboard.latin.utils.RecapitalizeMode
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.prefs
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import kotlin.math.abs
 
@@ -61,6 +63,29 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         afterMove = { inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current) },
         sendArrows = { lines -> sendVerticalArrows(lines) },
     )
+
+    // floating cursor (trackpad page and long press on space)
+    private val floatingCursorCallbacks by lazy {
+        TrackpadOverlay.Callbacks(
+            beforePlace = { inputLogic.finishInput() },
+            place = { offset ->
+                inputLogic.setExpectCursorMove()
+                connection.setSelection(offset, offset)
+                verticalCursorMover.resetGoal()
+                inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current)
+            },
+            select = { anchor, offset ->
+                inputLogic.setExpectCursorMove()
+                connection.setSelection(anchor, offset)
+                verticalCursorMover.resetGoal()
+                // continue this selection with delete / shift swipes
+                selAnchor = anchor
+                selActive = offset
+                selActiveUnknown = false
+            },
+            currentOffset = { maxOf(connection.expectedSelectionStart, connection.expectedSelectionEnd) },
+        )
+    }
 
     // selection made by swiping from delete or shift: the anchor stays, the active end moves.
     // Kept after the swipe, so the next swipe continues moving the same end if the selection is unchanged.
@@ -150,16 +175,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         }
         when (primaryCode) {
             KeyCode.TRACKPAD -> {
-                TrackpadOverlay.toggle(
-                    latinIME,
-                    beforePlace = { inputLogic.finishInput() },
-                    place = { offset ->
-                        inputLogic.setExpectCursorMove()
-                        connection.setSelection(offset, offset)
-                        verticalCursorMover.resetGoal()
-                        inputLogic.restartSuggestionsOnWordTouchedByCursor(settings.current)
-                    },
-                )
+                TrackpadOverlay.toggle(latinIME, floatingCursorCallbacks)
                 return
             }
             KeyCode.TEXT_FIELD_TEST -> {
@@ -354,7 +370,72 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onMoveShiftSelectPointer(steps: Int) {
         if (steps == 0 || !beginSelectionGesture(fromDelete = false)) return
+        // same letters / words setting as delete swipe
+        moveSelectionActiveHorizontally(steps, settings.current.mDeleteSwipe == 2)
+    }
+
+    override fun onMoveEdgeSelectPointer(steps: Int, fromDelete: Boolean) {
+        if (steps == 0 || !beginSelectionGesture(fromDelete)) return
         moveSelectionActiveHorizontally(steps, false)
+    }
+
+    override fun onSelectionJumpToLineEdge(toStart: Boolean) {
+        if (!selGestureActive) return
+        resolveSelActive()
+        val from = selActive
+        val anchor = selAnchor
+        if (from < 0 || anchor < 0) return
+        val apply: (Int?) -> Unit = { visualEdge ->
+            val target = visualEdge ?: textLineEdge(from, toStart)
+            if (target != null && target != from && selAnchor == anchor) {
+                selActive = target
+                selActiveUnknown = false
+                verticalCursorMover.resetGoal()
+                performHapticFeedback(HapticEvent.KEY_PRESS)
+                connection.setSelection(selAnchor, selActive)
+            }
+        }
+        verticalCursorMover.visualLineEdge(from, toStart, apply)
+    }
+
+    /** start / end of the text line (between line breaks) containing [from] */
+    private fun textLineEdge(from: Int, toStart: Boolean): Int? {
+        val (text, base) = surroundingText(3000) ?: return null
+        val pos = from - base
+        if (pos < 0 || pos > text.length) return null
+        return base + if (toStart) text.lastIndexOf('\n', pos - 1).let { if (it < 0) 0 else it + 1 }
+            else text.indexOf('\n', pos).let { if (it < 0) text.length else it }
+    }
+
+    override fun onSpaceCaretStart(): Boolean {
+        performHapticFeedback(HapticEvent.KEY_LONG_PRESS)
+        return TrackpadOverlay.startCaret(latinIME, floatingCursorCallbacks)
+    }
+
+    override fun onSpaceCaretMove(dx: Int, dy: Int) = TrackpadOverlay.moveCaret(dx, dy)
+
+    override fun onSpaceCaretEnd(apply: Boolean) = TrackpadOverlay.endCaret(apply)
+
+    override fun onSpaceSwipeMoveVertically(lines: Int) {
+        val code = if (lines < 0) KeyCode.ARROW_UP else KeyCode.ARROW_DOWN
+        repeat(abs(lines)) {
+            if (lines < 0) gestureMoveBackHaptics() else gestureMoveForwardHaptics()
+            onCodeInput(code, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
+        }
+    }
+
+    override fun onEditMenuStart(x: Int, y: Int): Boolean {
+        val shown = EditMenuOverlay.show(x, y) { performHapticFeedback(HapticEvent.KEY_PRESS) }
+        if (shown) performHapticFeedback(HapticEvent.KEY_LONG_PRESS)
+        return shown
+    }
+
+    override fun onEditMenuMove(x: Int, y: Int) = EditMenuOverlay.move(x, y)
+
+    override fun onEditMenuEnd(apply: Boolean) {
+        val code = EditMenuOverlay.finish() ?: return
+        if (!apply) return
+        onCodeInput(code, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
     }
 
     override fun onEndShiftSelect() {
@@ -375,8 +456,9 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     private fun beginSelectionGesture(fromDelete: Boolean): Boolean {
         if (selGestureActive) return true
         inputLogic.finishInput()
-        val start = connection.expectedSelectionStart
-        val end = connection.expectedSelectionEnd
+        // some apps (e.g. normal Android text fields) report a backwards selection with start > end
+        val start = minOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
+        val end = maxOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
         if (start < 0 || end < 0) return false
         resolveSelActive()
         val continuesPrevious = selAnchor >= 0 && start != end
@@ -397,8 +479,8 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     private fun resolveSelActive() {
         if (!selActiveUnknown) return
-        val start = connection.expectedSelectionStart
-        val end = connection.expectedSelectionEnd
+        val start = minOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
+        val end = maxOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
         selActive = if (start == selAnchor) end else start
         selActiveUnknown = false
     }
@@ -465,8 +547,25 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         selActiveUnknown = true
     }
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var shiftArrowPending = false
+    private var shiftArrowQueued = 0
+
+    /**
+     * Fallback for moving the selection end by lines when the app gives no positions: send shift + up / down,
+     * then read back what the app did and set the selection explicitly with our anchor. If the app didn't move
+     * it (or moved it back), move by text lines (line breaks) instead.
+     */
     private fun sendShiftArrows(lines: Int) {
+        if (lines == 0) return
+        if (shiftArrowPending) {
+            shiftArrowQueued += lines
+            return
+        }
         val ic = latinIME.currentInputConnection ?: return
+        resolveSelActive()
+        val anchor = selAnchor
+        val before = selActive
         val keyCode = if (lines < 0) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
         val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
         repeat(abs(lines)) {
@@ -474,7 +573,89 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
             ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCode, 0, meta))
         }
-        selActiveUnknown = true
+        if (anchor < 0 || before < 0) {
+            selActiveUnknown = true
+            return
+        }
+        shiftArrowPending = true
+        handler.postDelayed({
+            shiftArrowPending = false
+            val sel = readAppSelection()
+            var newActive: Int? = null
+            if (sel != null) {
+                val (s, e) = sel
+                newActive = when {
+                    s == anchor && e != anchor -> e
+                    e == anchor && s != anchor -> s
+                    else -> if (lines < 0) s else e
+                }
+            }
+            if (newActive == null || newActive == before)
+                newActive = offsetMovedByTextLines(before, lines) ?: before
+            selActive = newActive
+            selActiveUnknown = false
+            connection.setSelection(anchor, newActive)
+            val queued = shiftArrowQueued
+            shiftArrowQueued = 0
+            if (queued != 0) sendShiftArrows(queued)
+        }, 80)
+    }
+
+    /** the selection as the app has it right now (start <= end), or null if unknown */
+    private fun readAppSelection(): Pair<Int, Int>? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val ic = latinIME.currentInputConnection ?: return null
+            val st = try { ic.getSurroundingText(0, 0, 0) } catch (e: Exception) { null }
+            if (st != null && st.offset >= 0 && st.selectionStart >= 0) {
+                val a = st.offset + st.selectionStart
+                val b = st.offset + st.selectionEnd
+                return minOf(a, b) to maxOf(a, b)
+            }
+        }
+        val a = connection.expectedSelectionStart
+        val b = connection.expectedSelectionEnd
+        if (a < 0 || b < 0) return null
+        return minOf(a, b) to maxOf(a, b)
+    }
+
+    /** text around the selection: the text and the absolute offset of its first character */
+    private fun surroundingText(n: Int): Pair<CharSequence, Int>? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val ic = latinIME.currentInputConnection ?: return null
+            val st = try { ic.getSurroundingText(n, n, 0) } catch (e: Exception) { null } ?: return null
+            if (st.offset < 0) return null
+            return st.text to st.offset
+        }
+        val selStart = minOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
+        val selEnd = maxOf(connection.expectedSelectionStart, connection.expectedSelectionEnd)
+        if (selStart < 0) return null
+        val before = connection.getTextBeforeCursor(n, 0) ?: ""
+        val selected = if (selEnd > selStart) connection.getSelectedText(0) ?: return null else ""
+        val after = connection.getTextAfterCursor(n, 0) ?: ""
+        return "$before$selected$after" to (selStart - before.length)
+    }
+
+    /** [from] moved by [lines] text lines (separated by line breaks), keeping the character column if possible */
+    private fun offsetMovedByTextLines(from: Int, lines: Int): Int? {
+        val (text, base) = surroundingText(3000) ?: return null
+        var pos = from - base
+        if (pos < 0 || pos > text.length) return null
+        repeat(abs(lines)) {
+            val lineStart = text.lastIndexOf('\n', pos - 1).let { if (it < 0) 0 else it + 1 }
+            val column = pos - lineStart
+            if (lines < 0) {
+                if (lineStart == 0) return@repeat
+                val prevEnd = lineStart - 1 // the line break
+                val prevStart = text.lastIndexOf('\n', prevEnd - 1).let { if (it < 0) 0 else it + 1 }
+                pos = minOf(prevStart + column, prevEnd)
+            } else {
+                val lineEnd = text.indexOf('\n', pos).let { if (it < 0) return@repeat else it }
+                val nextStart = lineEnd + 1
+                val nextEnd = text.indexOf('\n', nextStart).let { if (it < 0) text.length else it }
+                pos = minOf(nextStart + column, nextEnd)
+            }
+        }
+        return pos + base
     }
 
     override fun onEnterSwipeShortcut(targetCode: Int): Boolean {

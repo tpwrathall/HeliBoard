@@ -14,7 +14,8 @@ android {
         minSdk = 21
         targetSdk = 37
         versionCode = 4300
-        versionName = "4.3-beta1"
+        // custom build: show the GitHub build number in the version (Settings → About)
+        versionName = "4.3-beta1" + (System.getenv("GITHUB_RUN_NUMBER")?.let { " custom build $it" } ?: "")
         ndk {
             abiFilters.clear()
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
@@ -77,7 +78,7 @@ android {
             }
             variant.outputs.forEach { output ->
                 if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                    output.outputFileName = "HeliBoard_${defaultConfig.versionName}-${variant.buildType}.apk"
+                    output.outputFileName = "HeliBoard_${defaultConfig.versionName?.replace(' ', '_')}-${variant.buildType}.apk"
                 }
             }
         }

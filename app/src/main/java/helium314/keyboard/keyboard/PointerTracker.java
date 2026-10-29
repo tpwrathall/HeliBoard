@@ -152,6 +152,22 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     // swipe from enter key onto another key for a shortcut (copy, paste, ...)
     private boolean mInEnterSwipe = false;
     @Nullable private Key mEnterSwipeHoverKey = null;
+    // swipe from the left (-1) or right (1) edge of the keyboard to select text, 0 if not started at an edge
+    private int mEdgeSwipeSide = 0;
+    private boolean mInEdgeSwipe = false;
+    // this touch was a tap on shift / delete during another finger's selection swipe: ignore it completely
+    private boolean mIsLineEdgeTap = false;
+    // tracker currently doing a selection swipe (delete, shift or edge), so tapping shift / delete with another
+    // finger can jump the selection to the start / end of the line
+    @Nullable private static PointerTracker sSelectionSwipeTracker = null;
+    // long press on space, then move the finger to move a floating cursor
+    private boolean mInSpaceCaret = false;
+    private int mCaretLastX;
+    private int mCaretLastY;
+    // swipe up from space shows the edit menu
+    private boolean mInEditMenu = false;
+    // width of the area at the left and right edge of the keyboard where an edge swipe can start
+    private static final int sEdgeZone = KtxKt.dpToPx(14, Resources.getSystem());
     // hold enter and tap a letter with another finger for a shortcut (like ctrl on a PC)
     @Nullable private static PointerTracker sEnterHoldTracker = null;
     private static long sEnterHoldStartTime = 0;
@@ -680,6 +696,19 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
         final Key key = getKeyOn(x, y);
         mBogusMoveEventDetector.onActualDownEvent(x, y);
+        mIsLineEdgeTap = false;
+        if (key != null && sSelectionSwipeTracker != null && sSelectionSwipeTracker != this
+                && (key.getCode() == KeyCode.SHIFT || key.getCode() == KeyCode.DELETE)) {
+            // another finger is selecting text: shift jumps to the start of the line, delete to the end
+            sListener.onSelectionJumpToLineEdge(key.getCode() == KeyCode.SHIFT);
+            mIsLineEdgeTap = true;
+            mCurrentKey = null;
+            mKeySwipeAllowed = false;
+            mInHorizontalSwipe = false;
+            mInVerticalSwipe = false;
+            cancelTrackingForAction();
+            return;
+        }
         if (key != null && key.isModifier()) {
             if (sInGesture) {
                 // Make sure not to interrupt an active gesture
@@ -731,6 +760,17 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (key != null && isSwiper(key.getCode()) && !sInGesture) {
             mKeySwipeAllowed = true;
             sInKeySwipe = true;
+        }
+        mEdgeSwipeSide = 0;
+        if (key != null && !mKeySwipeAllowed && !sInGesture && mKeyboard != null
+                && Settings.getValues().mEdgeSwipeSelect && mKeyboard.mId.getElement().isAlphabet()) {
+            if (x < sEdgeZone) mEdgeSwipeSide = -1;
+            else if (x > mKeyboard.mOccupiedWidth - sEdgeZone) mEdgeSwipeSide = 1;
+            if (mEdgeSwipeSide != 0) {
+                // the key is still typed when it's just tapped
+                mKeySwipeAllowed = true;
+                sInKeySwipe = true;
+            }
         }
         mKeyboardLayoutHasBeenChanged = false;
         mIsTrackingForActionDisabled = false;
@@ -789,7 +829,8 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         final SettingsValues sv = Settings.getValues();
         return switch (code) {
             case Constants.CODE_SPACE -> sv.mSpaceSwipeHorizontal != KeyboardActionListener.SwipeAction.NONE
-                    || sv.mSpaceSwipeVertical != KeyboardActionListener.SwipeAction.NONE;
+                    || sv.mSpaceSwipeVertical != KeyboardActionListener.SwipeAction.NONE
+                    || sv.mSpaceLongPressCursor;
             case KeyCode.DELETE -> sv.mDeleteSwipe > 0;
             case KeyCode.SHIFT -> sv.mShiftSwipeSelect && mKeyboard != null && mKeyboard.mId.getElement().isAlphabet();
             case Constants.CODE_ENTER -> sv.mEnterSwipeShortcuts;
@@ -964,6 +1005,20 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
 
     private void onKeySwipe(final int code, final int x, final int y, final long eventTime) {
         final SettingsValues sv = Settings.getValues();
+        if (mInSpaceCaret) {
+            sListener.onSpaceCaretMove(x - mCaretLastX, y - mCaretLastY);
+            mCaretLastX = x;
+            mCaretLastY = y;
+            return;
+        }
+        if (mInEditMenu) {
+            sListener.onEditMenuMove(x, y);
+            return;
+        }
+        if (mEdgeSwipeSide != 0) {
+            onEdgeSwipe(x, y);
+            return;
+        }
         final int fastTypingTimeout = 2 * sv.mKeyLongpressTimeout / 3;
         // we don't want keyswipes to start immediately if the user is fast-typing,
         // see https://github.com/openboard-team/openboard/issues/411
@@ -975,11 +1030,33 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             int dX = x - mStartX;
             int dY = y - mStartY;
 
+            // after a horizontal cursor swipe has started, the cursor can also be moved up / down
+            if (mInHorizontalSwipe && sv.mSpaceSwipeHorizontal == KeyboardActionListener.SwipeAction.MOVE_CURSOR) {
+                final int lines = dY / sSelectLineStep;
+                if (lines != 0) {
+                    mStartY += lines * sSelectLineStep;
+                    sListener.onSpaceSwipeMoveVertically(lines);
+                }
+            }
+
             // Touchpad mode
             mTouchpadHandler.enableTouchpadMove(x, y, sListener);
 
             // Vertical movement
             int stepsY = dY / sPointerStep;
+            if (stepsY != 0 && abs(dX) < abs(dY) && !mInHorizontalSwipe
+                    && sv.mSpaceSwipeVertical == KeyboardActionListener.SwipeAction.EDIT_MENU) {
+                if (!mInVerticalSwipe) {
+                    sTimerProxy.cancelKeyTimersOf(this);
+                    mInVerticalSwipe = true;
+                    // only swiping up opens the menu
+                    if (stepsY < 0 && sListener.onEditMenuStart(mStartX, mStartY)) {
+                        mInEditMenu = true;
+                        sListener.onEditMenuMove(x, y);
+                    }
+                }
+                return;
+            }
             if (stepsY != 0 && abs(dX) < abs(dY) && !mInHorizontalSwipe) {
                 if (!mInVerticalSwipe) {
                     sTimerProxy.cancelKeyTimersOf(this);
@@ -1017,13 +1094,16 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                 if (abs(dX) < sPointerStep) return;
                 sTimerProxy.cancelKeyTimersOf(this);
                 mInShiftSwipe = true;
+                sSelectionSwipeTracker = this;
                 // undo the shift state change done when the key was pressed
                 if (mCurrentKey != null) callListenerOnRelease(mCurrentKey, KeyCode.SHIFT, true);
                 callListenerOnFinishSlidingInput();
             }
-            final int steps = dX / sPointerStep;
+            // half speed when selecting words (same setting as delete swipe)
+            final int stepWidth = sPointerStep * (sv.mDeleteSwipe == 2 ? 2 : 1);
+            final int steps = dX / stepWidth;
             if (steps != 0) {
-                mStartX += steps * sPointerStep;
+                mStartX += steps * stepWidth;
                 sListener.onMoveShiftSelectPointer(steps);
             }
             // up / down only once the sideways swipe has started, as sliding up from shift types a capital
@@ -1048,6 +1128,10 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             }
         } else if (code == KeyCode.DELETE) {
             // Delete slider
+            if (!mInHorizontalSwipe && (abs(x - mStartX) > sPointerStep / 2 || abs(y - mStartY) > sPointerStep / 2)) {
+                // finger is moving: don't let key repeat delete the selection
+                sTimerProxy.cancelKeyTimersOf(this);
+            }
             int steps = (x - mStartX) / (sPointerStep * sv.mDeleteSwipe); // half speed for word delete
             if (steps != 0) {
                 if (!mInHorizontalSwipe) {
@@ -1055,6 +1139,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     mInHorizontalSwipe = true;
                 }
                 mStartX += steps * sPointerStep;
+                sSelectionSwipeTracker = this;
                 sListener.onMoveDeletePointer(steps);
             }
             // up / down moves the selection by lines (mInHorizontalSwipe is used as "delete swipe active")
@@ -1065,8 +1150,33 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
                     mInHorizontalSwipe = true;
                 }
                 mStartY += lines * sSelectLineStep;
+                sSelectionSwipeTracker = this;
                 sListener.onMoveSelectionVertically(lines, true);
             }
+        }
+    }
+
+    /** swipe that started at the left / right edge of the keyboard: select like shift / delete swipe, by letters */
+    private void onEdgeSwipe(final int x, final int y) {
+        final boolean likeDelete = mEdgeSwipeSide > 0;
+        if (!mInEdgeSwipe) {
+            // start only with a sideways move away from the edge, so normal typing and sliding to other keys still work
+            final int dX = x - mStartX;
+            if (abs(dX) < sPointerStep || abs(dX) < abs(y - mStartY)) return;
+            sTimerProxy.cancelKeyTimersOf(this);
+            mInEdgeSwipe = true;
+            sSelectionSwipeTracker = this;
+            setReleasedKeyGraphics(mCurrentKey, true);
+        }
+        final int steps = (x - mStartX) / sPointerStep;
+        if (steps != 0) {
+            mStartX += steps * sPointerStep;
+            sListener.onMoveEdgeSelectPointer(steps, likeDelete);
+        }
+        final int lines = (y - mStartY) / sSelectLineStep;
+        if (lines != 0) {
+            mStartY += lines * sSelectLineStep;
+            sListener.onMoveSelectionVertically(lines, likeDelete);
         }
     }
 
@@ -1117,6 +1227,11 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         }
 
         sTimerProxy.cancelUpdateBatchInputTimer(this);
+        if (mIsLineEdgeTap) {
+            // don't release the other finger that is still selecting
+            mIsLineEdgeTap = false;
+            return;
+        }
         if (tryEnterChord()) {
             return;
         }
@@ -1227,6 +1342,26 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             // Touchpad mode
             mTouchpadHandler.disableTouchpadMode();
 
+            if (sSelectionSwipeTracker == this) sSelectionSwipeTracker = null;
+            if (mInSpaceCaret) {
+                mInSpaceCaret = false;
+                sListener.onSpaceCaretEnd(true);
+                return;
+            }
+            if (mInEditMenu) {
+                mInEditMenu = false;
+                mInVerticalSwipe = false;
+                sListener.onEditMenuEnd(true);
+                sListener.onEndSpaceSwipe();
+                return;
+            }
+            if (mInEdgeSwipe) {
+                mInEdgeSwipe = false;
+                mEdgeSwipeSide = 0;
+                sListener.onEndShiftSelect();
+                return;
+            }
+            mEdgeSwipeSide = 0;
             if (mInShiftSwipe) {
                 mInShiftSwipe = false;
                 sListener.onEndShiftSelect();
@@ -1307,6 +1442,20 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             sListener.onReleaseKey(popupKeyCode, false);
             return;
         }
+        if (code == Constants.CODE_SPACE && key.getPopupKeys() == null && Settings.getValues().mSpaceLongPressCursor
+                && !mInHorizontalSwipe && !mInVerticalSwipe) {
+            // long press space, then move the finger to move a floating cursor (like iOS)
+            if (sListener.onSpaceCaretStart()) {
+                sTimerProxy.cancelKeyTimersOf(this);
+                mInSpaceCaret = true;
+                mCaretLastX = mLastX;
+                mCaretLastY = mLastY;
+                mKeySwipeAllowed = true;
+                sInKeySwipe = true;
+                setReleasedKeyGraphics(key, false);
+                return;
+            }
+        }
         if (code == KeyCode.LANGUAGE_SWITCH
                 || (code == Constants.CODE_SPACE && key.getPopupKeys() == null && Settings.getValues().mSpaceForLangChange)
         ) {
@@ -1356,9 +1505,22 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
     }
 
     private void resetShiftAndEnterSwipe() {
+        if (sSelectionSwipeTracker == this) sSelectionSwipeTracker = null;
         if (mInShiftSwipe) {
             mInShiftSwipe = false;
             sListener.onEndShiftSelect();
+        }
+        if (mInEdgeSwipe) {
+            mInEdgeSwipe = false;
+            sListener.onEndShiftSelect();
+        }
+        if (mInSpaceCaret) {
+            mInSpaceCaret = false;
+            sListener.onSpaceCaretEnd(false);
+        }
+        if (mInEditMenu) {
+            mInEditMenu = false;
+            sListener.onEditMenuEnd(false);
         }
         mInEnterSwipe = false;
         if (mEnterSwipeHoverKey != null) {
@@ -1482,6 +1644,7 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
         if (sInGesture) return;
         if (key == null) return;
         if (!key.isRepeatable()) return;
+        if (key.getCode() == KeyCode.DELETE && Settings.getValues().mDisableDeleteRepeat) return;
         // Don't start key repeat when we are in the dragging finger mode.
         if (mIsInDraggingFinger) return;
         final int startRepeatCount = 1;

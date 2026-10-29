@@ -17,6 +17,24 @@ import helium314.keyboard.latin.LatinIME
 object CursorPlacer {
     private const val WIDE = 10000f
 
+    /** top of the keyboard (including toolbar / suggestion strip) on screen, or null if not shown */
+    fun keyboardTopOnScreen(): Float? {
+        val switcher = KeyboardSwitcher.getInstance()
+        val pos = IntArray(2)
+        var top: Float? = null
+        val keyboardView = switcher.mainKeyboardView
+        if (keyboardView != null && keyboardView.isShown) {
+            keyboardView.getLocationOnScreen(pos)
+            top = pos[1].toFloat()
+        }
+        val strip = switcher.stripContainer
+        if (strip != null && strip.isShown) {
+            strip.getLocationOnScreen(pos)
+            top = minOf(top ?: Float.MAX_VALUE, pos[1].toFloat())
+        }
+        return top
+    }
+
     fun isSupported(ime: LatinIME): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
         val editorInfo = ime.currentInputEditorInfo ?: return false

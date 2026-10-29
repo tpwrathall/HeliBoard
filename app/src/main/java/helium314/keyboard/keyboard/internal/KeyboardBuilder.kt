@@ -169,6 +169,19 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
                     spaceLeft.mWidth += spacerWidth
                 }
             } else {
+                // repeat the keys next to the gap on the other half, so they can be reached with either thumb
+                val duplicateColumns = Settings.getValues().mSplitDuplicateColumns
+                if (duplicateColumns > 0) {
+                    fun isCharKey(k: KeyParams) = !k.isSpacer && k.mCode > 0 && k.mBackgroundType == Key.BACKGROUND_TYPE_NORMAL
+                    val fromLeft = row.subList(0, insertIndex).takeLastWhile { isCharKey(it) }.takeLast(duplicateColumns)
+                    val fromRight = row.subList(insertIndex, row.size).takeWhile { isCharKey(it) }.take(duplicateColumns)
+                    val addedWidth = fromLeft.sumOf { it.mWidth } + fromRight.sumOf { it.mWidth }
+                    row.addAll(insertIndex, fromRight.map { KeyParams(it) }) // end of left half
+                    insertIndex += fromRight.size
+                    row.addAll(insertIndex, fromLeft.map { KeyParams(it) }) // start of right half, spacer goes before
+                    // take the space from the gap where possible
+                    spacer.mWidth = (spacerRelativeWidth - addedWidth).coerceAtLeast(spacerRelativeWidth * 0.2f)
+                }
                 val widthBeforeSpacer = row.subList(0, insertIndex).sumOf { it.mWidth }
                 val widthAfterSpacer = row.subList(insertIndex, row.size).sumOf { it.mWidth }
                 maxWidthBeforeSpacer = maxWidthBeforeSpacer.coerceAtLeast(widthBeforeSpacer)

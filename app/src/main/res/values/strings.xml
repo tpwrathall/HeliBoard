@@ -223,7 +223,7 @@
     <!-- Units abbreviation for size (megabytes) -->
     <string name="abbreviation_unit_mb">%s MB</string>
     <!-- Preferences item for enabling swipe deletion -->
-    <string name="delete_swipe">Delete swipe</string>
+    <string name="delete_swipe">Delete &amp; shift swipe</string>
     <!-- Description for "delete_swipe" option. -->
     <string name="delete_swipe_summary">Perform a swipe from the delete key to select and remove bigger portions of text at once</string>
     <!-- "delete_swipe" option to delete letters by swiping. -->
@@ -236,6 +236,17 @@
     <string name="shift_swipe_select_summary">Swipe left or right from the shift key to select text. Sliding up onto a letter still types a capital</string>
     <string name="enter_swipe_shortcuts">Enter swipe shortcuts</string>
     <string name="enter_swipe_shortcuts_summary">Slide from enter onto a letter, or hold enter and tap a letter: A select all, C copy, X cut, V paste, Z undo, Y redo, S select word</string>
+    <string name="edge_swipe_select">Swipe from keyboard edges to select</string>
+    <string name="edge_swipe_select_summary">Start a swipe right at the left edge to select like shift swipe, or at the right edge to select like delete swipe, letter by letter. Tapping a key at the edge still types it</string>
+    <string name="disable_delete_repeat">Turn off delete key repeat</string>
+    <string name="disable_delete_repeat_summary">Holding delete no longer deletes repeatedly, so it can\'t delete a selection while swiping</string>
+    <string name="space_long_press_cursor">Long press space to move cursor</string>
+    <string name="space_long_press_cursor_summary">Hold the space bar, then move your finger to move a floating cursor, like on iOS. Replaces the input method picker on long press</string>
+    <string name="space_swipe_edit_menu_entry">Edit menu (swipe up)</string>
+    <string name="split_duplicate_columns">Repeat middle columns when split</string>
+    <string name="split_duplicate_columns_summary">Number of key columns next to the gap that are shown on both halves of the split keyboard</string>
+    <string name="toolbar_key_on_right">Toolbar button on the right</string>
+    <string name="toolbar_key_on_right_summary">Show the toolbar expand button on the right side of the suggestion strip</string>
     <string name="split_full_width_space">Full-width space bar when split</string>
     <string name="split_full_width_space_summary">In split keyboard mode, the space bar stretches across the gap instead of being split in two</string>
     <string name="trackpad" tools:keep="@string/trackpad">Trackpad</string>

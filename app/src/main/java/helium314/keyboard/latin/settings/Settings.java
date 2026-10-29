@@ -124,6 +124,11 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_ENTER_SWIPE_SHORTCUTS = "enter_swipe_shortcuts";
     public static final String PREF_KEEP_CURSOR_COLUMN = "keep_cursor_column";
     public static final String PREF_SPLIT_FULL_WIDTH_SPACE = "split_full_width_space";
+    public static final String PREF_DISABLE_DELETE_REPEAT = "disable_delete_repeat";
+    public static final String PREF_EDGE_SWIPE_SELECT = "edge_swipe_select";
+    public static final String PREF_SPACE_LONG_PRESS_CURSOR = "space_long_press_cursor";
+    public static final String PREF_SPLIT_DUPLICATE_COLUMNS = "split_duplicate_columns";
+    public static final String PREF_TOOLBAR_KEY_ON_RIGHT = "toolbar_key_on_right";
     public static final String PREF_AUTOSPACE_AFTER_PUNCTUATION = "autospace_after_punctuation";
     public static final String PREF_AUTOSPACE_AFTER_SUGGESTION = "autospace_after_suggestion";
     public static final String PREF_AUTOSPACE_AFTER_GESTURE_TYPING = "autospace_after_gesture_typing";
